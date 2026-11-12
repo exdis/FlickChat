@@ -1175,8 +1175,7 @@ end
 
 -- The line over the legend: what to do right now.
 local function Hint()
-    -- The lesson's last row is left to the skip reminder, which stands at its right end.
-    if S.lesson then return LessonText() .. "\n " end
+    if S.lesson then return LessonText() end
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
@@ -1404,11 +1403,14 @@ Paint = function()
     kb.hint:SetText(text ~= "" and (S.lesson or S.forget or S.move or not ns.db.guideOff or S.symbols and (ns.db.uses.pick or 0) < PICK_TIP_USES) and text or nil)
     -- The lesson's lines stand over the keyboard on a dark strip (chat sits low on most screens), clear of the
     -- guide and the reminders there; with the keyboard high on the screen they stay under it.
+    -- Under the lesson's lines a row of its own for the skip reminder, with a little air between.
+    local row = S.lesson and size + 10 or 0
     local lift = false
     if S.lesson and (kb:GetTop() or 0) * kb:GetEffectiveScale() < UIParent:GetHeight() * UIParent:GetEffectiveScale() * 0.7 then
         lift = 14
         if kb.toggle.over == kb.guide then lift = lift + kb.guide:GetHeight() + 4 end
         if not ns.db.stickTipsOff then lift = lift + TOGGLE_GAP + 18 end
+        lift = lift + row
     end
     if kb.hintLift ~= lift then
         kb.hintLift = lift
@@ -1421,6 +1423,7 @@ Paint = function()
             kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
         end
     end
+    kb.hintBack:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 8, -7 - row)
     kb.hintBack:SetShown(lift ~= false and kb.hint:GetText() ~= nil)
     if kb.skipSize ~= size then
         kb.hintSkip:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
@@ -1722,7 +1725,7 @@ local function Build()
     -- the lesson's way out, apart from its lines: at the right end of their last row
     kb.hintSkip = kb:CreateFontString(nil, "ARTWORK")
     kb.hintSkip:SetTextColor(0.82, 0.82, 0.82)
-    kb.hintSkip:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 0, 0)
+    kb.hintSkip:SetPoint("TOPRIGHT", kb.hint, "BOTTOMRIGHT", 0, -8)
     kb.bar = CreateFrame("Frame", nil, kb)
     kb.bar:SetClampedToScreen(true)
     local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
