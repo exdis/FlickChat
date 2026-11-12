@@ -1124,7 +1124,20 @@ local function LessonText()
         return L["LESSON_PUNCT_FLICK"]
     end
     local key = D.KeyOf(target)
-    if key:sub(1, #S.flicks) ~= S.flicks then return L["LESSON_WRONG"]:format(Glyph("PADLTRIGGER")) end
+    if key:sub(1, #S.flicks) ~= S.flicks then
+        -- What went wrong at the first flick that missed: the other stick, another direction, or one flick too many.
+        local i = 1
+        while key:sub(i, i) == S.flicks:sub(i, i) do i = i + 1 end
+        local want, got = tonumber(key:sub(i, i)), tonumber(S.flicks:sub(i, i))
+        local back = Glyph("PADLTRIGGER")
+        if not want then return L["LESSON_TOO_MANY"]:format(target, back) end
+        local how = { target:sub(i, i), Groups()[want], L[want <= 4 and "STICK_LEFT" or "STICK_RIGHT"],
+            L["DIR_" .. ((want - 1) % 4 + 1)], back }
+        local sameStick, sameDir = (want <= 4) == (got <= 4), (want - got) % 4 == 0
+        if sameDir and not sameStick then return L["LESSON_WRONG_STICK"]:format(unpack(how)) end
+        if sameStick then return L["LESSON_WRONG_DIR"]:format(unpack(how)) end
+        return L["LESSON_WRONG"]:format(Groups()[got], unpack(how))
+    end
     local shown = (Word() or ""):lower()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n" or ""

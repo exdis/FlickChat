@@ -16,7 +16,10 @@ ns.EN = {
     LESSON_START = "Each box holds a few letters. Flick a stick toward the box with your letter and let it spring"
         .. " back: the word is worked out for you.",
     LESSON_FLICK = "Type \"%s\". The letter %s is in the %s box: flick the %s %s.",
-    LESSON_WRONG = "That flick went to another box. %s takes it back.",
+    LESSON_WRONG_STICK = "That was the other stick. The letter %s is in the %s box: flick the %s %s. %s takes the last flick back.",
+    LESSON_WRONG_DIR = "Correct stick, but another direction. The letter %s is in the %s box: flick the %s %s. %s takes the last flick back.",
+    LESSON_WRONG = "That flick went to the %s box. The letter %s is in the %s box: flick the %s %s. %s takes the last flick back.",
+    LESSON_TOO_MANY = "One flick too many: \"%s\" is already spelled. %s takes it back.",
     LESSON_TAKE = "\"%s\" is in the chat box. %s keeps it and adds a space.",
     LESSON_PUNCT_FLICK = "Flick the left stick down for the question mark.",
     LESSON_SKIP = "Skip the lesson",
