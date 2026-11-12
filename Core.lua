@@ -414,7 +414,18 @@ function ns.StyleNotice()
         notice:EnableMouse(true)
         ns.Dress(notice)
         local EDGE = 24
-        local function Glyph(key) return GetBindingText(key, 1) end
+        -- A button's icon at a size that reads in a sentence (the game's own inline size is small).
+        local function Glyph(key)
+            local text = GetBindingText(key, 1) or ""
+            local atlas, file = text:match("|A:([^:|]+)"), text:match("|T([^:|]+)")
+            if atlas then
+                local big = atlas:gsub("_%d+$", "_64")
+                return "|A:" .. (C_Texture.GetAtlasInfo(big) and big or atlas) .. ":26:26|a"
+            elseif file then
+                return "|T" .. file .. ":26:26|t"
+            end
+            return text
+        end
         local function Text(font)
             local text = notice:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
             text:SetJustifyH("LEFT")
@@ -435,7 +446,7 @@ function ns.StyleNotice()
         local close = CreateFrame("Button", "FlickChatNoticeClose", notice)
         close.text = close:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         close.text:SetPoint("RIGHT")
-        close:SetPoint("TOPRIGHT", -EDGE + 4, -18)
+        close:SetPoint("TOPRIGHT", -EDGE + 4, -14)
         close:SetScript("OnClick", function() notice:Hide() end)
         local text = Line(title, 12)
         text:SetText(L["NOTICE_WELCOME"])
@@ -469,13 +480,9 @@ function ns.StyleNotice()
             ROWS.hideLine[2](self:GetChecked() == true)
             self:SetChecked(ROWS.hideLine[1]())
         end)
-        local box = Text()
-        box:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
-        box:SetPoint("TOP", check, "TOP", 0, -8)
         local label = Text()
-        label:SetPoint("TOPLEFT", check, "TOPRIGHT", 4, -7)
-        label:SetPoint("RIGHT", box, "LEFT", -10, 0)
-        label:SetText(L["OPT_HIDE_LINE"])
+        label:SetPoint("TOPLEFT", check, "TOPRIGHT", 4, -4)
+        label:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
         -- The Classic chat style, in a section of its own at the bottom: what it means in red, then the switch.
         local rule = notice:CreateTexture(nil, "ARTWORK")
         rule:SetColorTexture(0.6, 0.45, 0.2, 0.7)
@@ -501,11 +508,12 @@ function ns.StyleNotice()
             local classic = GetCVar("chatStyle") ~= "im"
             local section = classic or notice.switched
             close.text:SetText(L["NOTICE_KEY_CLOSE"]:format(Glyph("PAD2")))
-            close:SetSize(close.text:GetStringWidth() + 4, 20)
+            close:SetSize(close.text:GetStringWidth() + 4, 28)
             size:SetText(L["NOTICE_SIZE"]:format(ns.db.size or 100))
             smaller:SetText(Glyph("PADLSHOULDER"))
             larger:SetText(Glyph("PADRSHOULDER"))
-            box:SetText(Glyph("PAD3"))
+            -- X right after the box's sentence
+            label:SetText(L["OPT_HIDE_LINE"] .. "  " .. Glyph("PAD3"))
             swap:SetText(L["NOTICE_SWAP"] .. "   " .. Glyph("PAD1"))
             rule:SetShown(section)
             warn:SetShown(section)
@@ -544,7 +552,8 @@ function ns.StyleNotice()
             ClearOverrideBindings(notice)
             if on and classic then
                 swap:ClearAllPoints()
-                swap:SetPoint("TOP", warn, "BOTTOM", 0, -12)
+                -- to the window itself: a secure button cannot hang on a piece of text
+                swap:SetPoint("BOTTOM", notice, "BOTTOM", 0, 22)
                 SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap")
             end
         end
