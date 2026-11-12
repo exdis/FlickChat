@@ -554,6 +554,14 @@ function LESSON.Drill(late)
         end)
         return
     end
+    -- A swing straight across that bowed out through a box on the way picked that box up too: one flick too
+    -- many, between two opposite boxes. Forgiven here: the move was the right one.
+    if #S.flicks == #want + 1 then
+        for k = 2, #want do
+            local across = (tonumber(want:sub(k, k)) - tonumber(want:sub(k - 1, k - 1))) % 4 == 2
+            if across and S.flicks:sub(1, k - 1) .. S.flicks:sub(k + 1) == want then S.flicks = want end
+        end
+    end
     -- Rolled: every step to the box next door (a swing across is no roll).
     local rolls = 0
     for i = 2, #want do
