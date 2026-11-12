@@ -409,89 +409,117 @@ function ns.StyleNotice()
         notice = CreateFrame("Frame", "FlickChatNotice", UIParent)
         notice:Hide()
         notice:SetFrameStrata("FULLSCREEN_DIALOG")
-        notice:SetSize(500, 10)
+        notice:SetSize(520, 10)
         notice:SetPoint("CENTER", 0, 150)
         notice:EnableMouse(true)
         ns.Dress(notice)
+        local EDGE = 24
+        local function Glyph(key) return GetBindingText(key, 1) end
+        local function Text(font)
+            local text = notice:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
+            text:SetJustifyH("LEFT")
+            return text
+        end
+        -- Under another line, the window's width.
+        local function Line(above, gap, font)
+            local line = Text(font)
+            line:SetPoint("TOP", above, "BOTTOM", 0, -gap)
+            line:SetPoint("LEFT", notice, "LEFT", EDGE, 0)
+            line:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
+            return line
+        end
         local title = notice:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -22)
         title:SetText(C_AddOns.GetAddOnMetadata(addonName, "Title"))
-        local function Line(above, gap, font)
-            local line = notice:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
-            line:SetPoint("TOP", above, "BOTTOM", 0, -gap)
-            line:SetPoint("LEFT", notice, "LEFT", 24, 0)
-            line:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
-            line:SetJustifyH("LEFT")
-            return line
-        end
-        local text = Line(title, 10)
-        -- The keyboard's size, the keyboard itself under the notice as the preview.
-        local size = Line(text, 14, "GameFontNormal")
-        local function Step(name, label, by, x)
+        -- top right: B closes (a button, for the mouse too)
+        local close = CreateFrame("Button", "FlickChatNoticeClose", notice)
+        close.text = close:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        close.text:SetPoint("RIGHT")
+        close:SetPoint("TOPRIGHT", -EDGE + 4, -18)
+        close:SetScript("OnClick", function() notice:Hide() end)
+        local text = Line(title, 12)
+        text:SetText(L["NOTICE_WELCOME"])
+        -- The keyboard's size, the keyboard itself under the window as the preview: LB - + RB at the right.
+        local size = Line(text, 16, "GameFontNormal")
+        local larger = Text()
+        larger:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
+        larger:SetPoint("TOP", size, "TOP", 0, 1)
+        local function Step(name, label, by, anchor)
             local button = CreateFrame("Button", name, notice, "UIPanelButtonTemplate")
             button:SetSize(26, 22)
             button:SetText(label)
-            button:SetPoint("RIGHT", notice, "RIGHT", x, 0)
-            button:SetPoint("TOP", size, "TOP", 0, 5)
+            button:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
             button:SetScript("OnClick", function()
                 ns.db.size = math.max(70, math.min(200, (ns.db.size or 100) + by))
                 size:SetText(L["NOTICE_SIZE"]:format(ns.db.size))
                 if ns.Restyle then ns.Restyle() end
             end)
+            return button
         end
-        Step("FlickChatNoticeSmaller", "-", -10, -54)
-        Step("FlickChatNoticeLarger", "+", 10, -24)
-        local note = Line(size, 8, "GameFontDisableSmall")
+        local plus = Step("FlickChatNoticeLarger", "+", 10, larger)
+        local minus = Step("FlickChatNoticeSmaller", "-", -10, plus)
+        local smaller = Text()
+        smaller:SetPoint("RIGHT", minus, "LEFT", -6, 0)
+        local note = Line(size, 10, "GameFontDisableSmall")
         note:SetText(L["NOTICE_SIZE_NOTE"])
+        -- The hide-line box, X at the end of its line.
         local check = CreateFrame("CheckButton", "FlickChatNoticeCheck", notice, "UICheckButtonTemplate")
         check:SetPoint("TOPLEFT", note, "BOTTOMLEFT", -4, -10)
         check:SetScript("OnClick", function(self)
             ROWS.hideLine[2](self:GetChecked() == true)
             self:SetChecked(ROWS.hideLine[1]())
         end)
-        local label = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        local box = Text()
+        box:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
+        box:SetPoint("TOP", check, "TOP", 0, -8)
+        local label = Text()
         label:SetPoint("TOPLEFT", check, "TOPRIGHT", 4, -7)
-        label:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
-        label:SetJustifyH("LEFT")
+        label:SetPoint("RIGHT", box, "LEFT", -10, 0)
         label:SetText(L["OPT_HIDE_LINE"])
-        local keys = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        keys:SetPoint("TOP", check, "BOTTOM", 0, -22)
-        keys:SetPoint("LEFT", notice, "LEFT", 24, 0)
-        keys:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
-        keys:SetJustifyH("CENTER")
-        local okay = CreateFrame("Button", "FlickChatNoticeOkay", notice, "UIPanelButtonTemplate")
-        okay:SetText(OKAY)
-        okay:SetSize(110, 24)
-        okay:SetScript("OnClick", function() notice:Hide() end)
-        -- The switch to IM style: the game's own console command, run by a secure button on the player's press,
-        -- so the change is the player's (a setting written by addon code is refused its chat changes). On
+        -- The Classic chat style, in a section of its own at the bottom: what it means in red, then the switch.
+        local rule = notice:CreateTexture(nil, "ARTWORK")
+        rule:SetColorTexture(0.6, 0.45, 0.2, 0.7)
+        rule:SetHeight(1)
+        rule:SetPoint("LEFT", notice, "LEFT", EDGE, 0)
+        rule:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
+        rule:SetPoint("TOP", check, "BOTTOM", 0, -14)
+        local warn = Line(rule, 14, "GameFontNormal")
+        warn:SetJustifyH("CENTER")
+        -- The switch itself: the game's own console command, run by a secure button on the player's press, so
+        -- the change is the player's (a setting written by addon code is refused its chat changes). On
         -- UIParent: under the notice it would make the notice a protected frame.
         local swap = CreateFrame("Button", "FlickChatNoticeSwap", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
         swap:Hide()
         swap:SetFrameStrata("FULLSCREEN_DIALOG")
         swap:SetFrameLevel(notice:GetFrameLevel() + 5)
-        swap:SetSize(190, 24)
-        swap:SetText(L["NOTICE_SWAP"])
+        swap:SetSize(280, 28)
         swap:RegisterForClicks("AnyUp", "AnyDown")
         swap:SetAttribute("type", "macro")
         swap:SetAttribute("macrotext", "/console chatStyle im")
-        local function Glyph(key) return GetBindingText(key, 1) end
-        -- What the notice says for the chat style as it is now; whether the switch is offered.
+        -- What the window says for the chat style as it is now; whether the switch is offered.
         local function Tell()
             local classic = GetCVar("chatStyle") ~= "im"
-            text:SetText(L[classic and "NOTICE_STYLE" or notice.switched and "NOTICE_SWAPPED" or "NOTICE_WELCOME"])
+            local section = classic or notice.switched
+            close.text:SetText(L["NOTICE_KEY_CLOSE"]:format(Glyph("PAD2")))
+            close:SetSize(close.text:GetStringWidth() + 4, 20)
             size:SetText(L["NOTICE_SIZE"]:format(ns.db.size or 100))
-            local parts = {}
-            if classic then parts[#parts + 1] = L["NOTICE_KEY_SWAP"]:format(Glyph("PAD1")) end
-            parts[#parts + 1] = L["NOTICE_KEY_SIZE"]:format(Glyph("PADLSHOULDER"), Glyph("PADRSHOULDER"))
-            parts[#parts + 1] = L["NOTICE_KEY_BOX"]:format(Glyph("PAD3"))
-            parts[#parts + 1] = L["NOTICE_KEY_CLOSE"]:format(Glyph("PAD2"))
-            keys:SetText(table.concat(parts, "   "))
-            okay:ClearAllPoints()
-            if classic then okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 20) else okay:SetPoint("BOTTOM", 0, 20) end
-            notice:SetHeight(22 + title:GetStringHeight() + 10 + text:GetStringHeight() + 14 + size:GetStringHeight()
-                + 8 + note:GetStringHeight() + 10 + 32 + math.max(0, label:GetStringHeight() - 18) + 22
-                + keys:GetStringHeight() + 56)
+            smaller:SetText(Glyph("PADLSHOULDER"))
+            larger:SetText(Glyph("PADRSHOULDER"))
+            box:SetText(Glyph("PAD3"))
+            swap:SetText(L["NOTICE_SWAP"] .. "   " .. Glyph("PAD1"))
+            rule:SetShown(section)
+            warn:SetShown(section)
+            if classic then
+                warn:SetText(L["NOTICE_STYLE"])
+                warn:SetTextColor(1, 0.25, 0.2)
+            else
+                warn:SetText(L["NOTICE_SWAPPED"])
+                warn:SetTextColor(0.4, 0.9, 0.4)
+            end
+            local height = 22 + title:GetStringHeight() + 12 + text:GetStringHeight() + 16 + size:GetStringHeight() + 10
+                + note:GetStringHeight() + 10 + 32 + math.max(0, label:GetStringHeight() - 18)
+            if section then height = height + 14 + 1 + 14 + warn:GetStringHeight() + (classic and 12 + 28 or 0) end
+            notice:SetHeight(height + 22)
             return classic
         end
         swap:SetScript("PostClick", function()
@@ -501,8 +529,8 @@ function ns.StyleNotice()
                 notice.Pad(true)
             end)
         end)
-        -- The pad presses the notice's own buttons: A the switch, the bumpers the size, X the box, B Okay.
-        -- Bindings and the secure button are a fight's to refuse: both wait one out.
+        -- A is the switch's (a press the game counts as the player's own). Bindings and the secure button are
+        -- a fight's to refuse: both wait one out.
         function notice.Pad(on)
             local classic = Tell()
             if InCombatLockdown() then
@@ -514,18 +542,27 @@ function ns.StyleNotice()
             swap:SetAlpha(1)
             swap:SetShown(on and classic)
             ClearOverrideBindings(notice)
-            if on then
+            if on and classic then
                 swap:ClearAllPoints()
-                swap:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 20)
-                -- Only the switch needs a press the game counts as the player's own.
-                if classic then SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap") end
+                swap:SetPoint("TOP", warn, "BOTTOM", 0, -12)
+                SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap")
             end
         end
-        -- The size, the box and Okay are the notice's own pad presses.
+        -- The size, the box and closing are the window's own pad presses.
         notice:SetScript("OnGamePadButtonDown", function(self, button)
-            if button == "PADLSHOULDER" or button == "PADRSHOULDER" then
-                local step = _G[button == "PADLSHOULDER" and "FlickChatNoticeSmaller" or "FlickChatNoticeLarger"]
-                step:GetScript("OnClick")(step)
+            -- A is let through to the key bindings, where it presses the switch (a press the game counts as the
+            -- player's). The game's controller mode sets its own pad bindings over ours as it goes, so ours is
+            -- set again here, just before the press reaches them. Every other button stops at this window.
+            local switch = button == "PAD1" and swap:IsShown() and not InCombatLockdown()
+            if not InCombatLockdown() then self:SetPropagateKeyboardInput(switch) end
+            if switch then
+                SetOverrideBindingClick(self, true, "PAD1", "FlickChatNoticeSwap")
+                return
+            end
+            if button == "PADLSHOULDER" then
+                minus:GetScript("OnClick")(minus)
+            elseif button == "PADRSHOULDER" then
+                plus:GetScript("OnClick")(plus)
             elseif button == "PAD3" then
                 check:SetChecked(not check:GetChecked())
                 check:GetScript("OnClick")(check)
