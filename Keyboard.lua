@@ -669,6 +669,7 @@ local function TakeSlot(slot)
     if S.naming then return TakeName(slot) end
     local word = S.slots[slot]
     if not word then return end
+    if S.lesson then S.lesson.dpadTold = true end
     Commit(word, true)
     Use("slot")
     Guess()
@@ -1141,11 +1142,14 @@ local function LessonText()
     local shown = (Word() or ""):lower()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n" or ""
-    -- From the second line on: a word already over the d-pad is taken there.
-    if lesson.at > 4 then
+    -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
+    -- teach. On the first line it takes a flick first; from the second a guessed next word counts too.
+    if #S.flicks < #key then
         for slot = 1, #SLOT_KEYS do
-            if (S.slots[slot] or ""):lower() == target and (#S.flicks > 0 or lesson.at < #LESSON) then
-                return intro .. L["LESSON_DPAD"]:format(target, L["DIR_" .. SLOT_DIR[slot]])
+            if (S.slots[slot] or ""):lower() == target
+                and (#S.flicks > 0 or (lesson.at > 4 and lesson.at < #LESSON)) then
+                local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
+                return intro .. L[line]:format(target, L["DIR_" .. SLOT_DIR[slot]])
             end
         end
     end

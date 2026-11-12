@@ -131,6 +131,7 @@ ns.EN = {
     LESSON_PUNCT = "Now the question mark: %s turns the boxes into punctuation.",
     LESSON_LINE2 = "Second line: \"on my way\". Words over the d-pad can be taken before they are fully flicked.",
     LESSON_LINE3 = "Last line: \"ty\", then send it.",
+    LESSON_DPAD_FIRST = "\"%s\" is already over the d-pad: press the d-pad %s to take it. You rarely have to flick a whole word, so watch those four words as you go.",
     LESSON_DPAD = "\"%s\" is over the d-pad: press the d-pad %s to take it.",
     LESSON_SEND = "\"%s\" is in the chat box. %s sends a line; in the lesson it only ends the lesson.",
     LESSON_SKIP_LINE = "%s skips the lesson.",
