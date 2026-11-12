@@ -174,9 +174,11 @@ end
 
 local function Guess()
     local guesses = NOTHING
+    -- the passed-through flick, while it is still among the flicks
+    if S.pass and (S.flicks == "" or S.pass > #S.flicks) then S.pass = nil end
     if S.flicks ~= "" then
         local stems
-        guesses, stems = D.Decode(S.flicks, PrevLow())
+        guesses, stems = D.Decode(S.flicks, PrevLow(), S.pass)
         Place(guesses, stems, 1)
     elseif S.literal then
         Place({}, {}, 0)
@@ -371,6 +373,7 @@ local function Emit(digit)
     if S.naming then return NameFlick(digit) end
     if S.exact then return ExactFlick(digit) end
     if S.literal then Commit(S.literal, true) end
+    if S.flicks == "" then S.pass = nil end
     S.flicks = S.flicks .. digit
     if S.lesson then
         S.lesson.linked = S.lesson.linked or {}
@@ -526,7 +529,18 @@ local function Roll(st, x, y, len)
         local now = GetTime()
         if probe then Note(string.format("roll %d -> %d", st.base + st.dir, st.base + dir)) end
         if S.lesson then S.lesson.rolls = (S.lesson.rolls or 0) + 1 end
+        -- The box being left was only passed through when it was rolled into, left again within a moment, and
+        -- lies between two opposite boxes: a swing across that bowed out along the rim looks just like that
+        -- (measured: the stick stays at the rim either way), so the word finder is told and decides.
+        local passed = st.rolledIn and st.cameFrom and (st.cameFrom - dir) % 4 == 2 and now - st.at < 0.12
+        local was, flicks = st.dir, #S.flicks
         Release(st, now)
+        if passed and #S.flicks == flicks + 1 and flicks > 0 then
+            S.pass = #S.flicks
+            Guess()
+            Show()
+        end
+        st.cameFrom, st.rolledIn = was, true
         if S.lesson then S.lesson.linkNext = true end
         st.at, st.px, st.py, st.peak, st.held = now, x, y, len, false
         st.dir, st.settled = dir, Off(degrees, dir) <= SETTLED
@@ -636,6 +650,7 @@ local function OnStick(_, which, x, y, len)
             -- out again right after letting go: a swing straight across, one move with the flick before
             if S.lesson and st.lastAt and GetTime() - st.lastAt < 0.4 then S.lesson.linkNext = true end
             st.out, st.at, st.px, st.py, st.peak, st.held = true, GetTime(), x, y, len, false
+            st.cameFrom, st.rolledIn = nil, false
             st.dir, st.settled = nil, false
             -- A fast flick can reach the rim on its first reading: that is its direction.
             if rolling then Roll(st, x, y, len) end

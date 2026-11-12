@@ -29,6 +29,8 @@ local FOLLOW_KEPT = 6
 local RARE_FROM = 3
 
 local NONE = {}
+-- A passed-through box read as not meant (see D.Decode).
+D.DROP_COST = log(0.05)
 local UTF8 = "[%z\1-\127\194-\244][\128-\191]*"
 local FOLD = {}
 local FOLDS = [[àa áa âa ãa äa åa æa çc èe ée êe ëe ìi íi îi ïi ñn òo óo ôo õo öo øo ùu úu ûu üu ýy ÿy ßs
@@ -563,7 +565,7 @@ end
 
 -- For a string of flicked digits (a misflick or two allowed on longer words): the best whole-word guesses, then
 -- the likeliest letters so far, one per flick.
-function D.Decode(seq, prevLow)
+function D.Decode(seq, prevLow, drop)
     best.n = 0
     wipe(stems)
     wipe(cleanStems)
@@ -574,6 +576,14 @@ function D.Decode(seq, prevLow)
     filtering, forgot = ns.db.matureFilter == true, ns.db.forgot
     local prevId = PrevId(prevLow)
     Walk(seq, n, 1, "", 1, #sorted + 1, 0, 0, prevId, prevLow)
+    -- A box only passed through on a swing across (drop: its place in the flicks) may not have been meant: the
+    -- flicks without it are read too, at a cost, so a word they spell wins only where the full flicks spell none.
+    local alt = drop and drop > 1 and drop <= n and sub(seq, 1, drop - 1) .. sub(seq, drop + 1)
+    if alt then Walk(alt, n - 1, 1, "", 1, #sorted + 1, D.DROP_COST, 0, prevId, prevLow) end
+    for _, e in ipairs(extras) do
+        local less = alt and e.key and not forgot[e.low] and Match(e.key, alt)
+        if less then Keep(e.word, e.low, Score(nil, e.low, e.chance, prevId, prevLow) + less + D.DROP_COST) end
+    end
     for _, e in ipairs(extras) do
         local cost = e.key and not forgot[e.low] and Match(e.key, seq)
         if cost then
