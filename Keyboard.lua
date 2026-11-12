@@ -28,12 +28,12 @@ local FLICK_TIP_USES = 30
 local PICK_TIP_USES = 3
 -- A pause this long on flicks no whole word fits: the player may think the word done, so say how to spell it.
 local MISSING_PAUSE = 1.2
--- The first-run lesson types "where should we meet?" with each box lit (words that take a few flicks before the
--- d-pad has them), then the question mark; its flicks, taken at a light tilt, set the player's own.
--- The lesson's three lines, word by word: the flicks and punctuation, then words taken off the d-pad, then sending.
+-- The first-run lesson types "anyone need a healer" with each box lit (words that take a few flicks before the
+-- d-pad has them); its flicks, taken at a light tilt, set the player's own.
+-- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
-local LESSON = { "where", "should", "we", "meet", "?", "on", "my", "way", "ty" }
-local LESSON_LINE_END, LESSON_LINE_START = { [5] = true, [8] = true }, { [6] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
+local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty" }
+local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [8] = true }, { [5] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
 -- A d-pad slot's direction word (DIR_n): up, left, right, down.
 local SLOT_DIR = { 1, 4, 2, 3 }
 local LESSON_ARM, LESSON_MIN_FLICKS, LESSON_FONT = 0.4, 8, 18
@@ -1147,7 +1147,7 @@ local function LessonText()
     if #S.flicks < #key then
         for slot = 1, #SLOT_KEYS do
             if (S.slots[slot] or ""):lower() == target
-                and (#S.flicks > 0 or (lesson.at > 5 and lesson.at < #LESSON)) then
+                and (#S.flicks > 0 or (lesson.at > 4 and lesson.at < #LESSON)) then
                 local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
                 return intro .. L[line]:format(target, L["DIR_" .. SLOT_DIR[slot]])
             end
