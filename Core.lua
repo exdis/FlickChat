@@ -406,14 +406,12 @@ function ns.StyleNotice()
         text:SetPoint("LEFT", notice, "LEFT", 24, 0)
         text:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
         text:SetJustifyH("LEFT")
-        text:SetText(L["NOTICE_STYLE"])
-        local check = CreateFrame("CheckButton", nil, notice, "UICheckButtonTemplate")
+        local check = CreateFrame("CheckButton", "FlickChatNoticeCheck", notice, "UICheckButtonTemplate")
         check:SetPoint("TOPLEFT", text, "BOTTOMLEFT", -4, -10)
-        local function Flip(on)
-            ROWS.hideLine[2](on)
-            check:SetChecked(ROWS.hideLine[1]())
-        end
-        check:SetScript("OnClick", function(self) Flip(self:GetChecked() == true) end)
+        check:SetScript("OnClick", function(self)
+            ROWS.hideLine[2](self:GetChecked() == true)
+            self:SetChecked(ROWS.hideLine[1]())
+        end)
         local label = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         label:SetPoint("TOPLEFT", check, "TOPRIGHT", 4, -7)
         label:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
@@ -424,26 +422,59 @@ function ns.StyleNotice()
         keys:SetPoint("LEFT", notice, "LEFT", 24, 0)
         keys:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
         keys:SetJustifyH("CENTER")
-        keys:SetText(L["NOTICE_KEYS"]:format(GetBindingText("PAD1", 1), GetBindingText("PAD2", 1)))
-        local okay = CreateFrame("Button", nil, notice, "UIPanelButtonTemplate")
+        local okay = CreateFrame("Button", "FlickChatNoticeOkay", notice, "UIPanelButtonTemplate")
         okay:SetText(OKAY)
         okay:SetSize(110, 24)
-        okay:SetPoint("BOTTOM", 0, 20)
+        okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 20)
         okay:SetScript("OnClick", function() notice:Hide() end)
-        notice:SetScript("OnGamePadButtonDown", function(self, button)
-            if button == "PAD1" then
-                Flip(not ROWS.hideLine[1]())
-            elseif button == "PAD2" then
-                self:Hide()
+        -- The switch itself: the game's own console command, run by a secure button on the player's press, so
+        -- the change is the player's (a setting written by addon code is refused its chat changes). On UIParent:
+        -- under the notice it would make the notice a protected frame.
+        local swap = CreateFrame("Button", "FlickChatNoticeSwap", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+        swap:Hide()
+        swap:SetFrameStrata("FULLSCREEN_DIALOG")
+        swap:SetFrameLevel(notice:GetFrameLevel() + 5)
+        swap:SetSize(190, 24)
+        swap:SetText(L["NOTICE_SWAP"])
+        swap:RegisterForClicks("AnyUp", "AnyDown")
+        swap:SetAttribute("type", "macro")
+        swap:SetAttribute("macrotext", "/console chatStyle im")
+        local function Tell()
+            local im = GetCVar("chatStyle") == "im"
+            text:SetText(L[im and "NOTICE_SWAPPED" or "NOTICE_STYLE"])
+            keys:SetText(im and L["NOTICE_KEYS_DONE"]:format(GetBindingText("PAD3", 1), GetBindingText("PAD2", 1))
+                or L["NOTICE_KEYS"]:format(GetBindingText("PAD1", 1), GetBindingText("PAD3", 1), GetBindingText("PAD2", 1)))
+            notice:SetHeight(22 + title:GetStringHeight() + 10 + text:GetStringHeight() + 10 + 32
+                + math.max(0, label:GetStringHeight() - 18) + 26 + keys:GetStringHeight() + 52)
+        end
+        swap:SetScript("PostClick", function() C_Timer.After(0.3, function() if notice:IsShown() then Tell() end end) end)
+        -- The pad presses the notice's own buttons: A the switch, X the box, B Okay. Bindings and the secure
+        -- button are a fight's to refuse: both wait one out.
+        local function Pad(on)
+            if InCombatLockdown() then
+                notice:RegisterEvent("PLAYER_REGEN_ENABLED")
+                swap:SetAlpha(on and 1 or 0)
+                return
             end
-        end)
+            notice:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            swap:SetAlpha(1)
+            swap:SetShown(on)
+            ClearOverrideBindings(notice)
+            if on then
+                swap:ClearAllPoints()
+                swap:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 20)
+                SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap")
+                SetOverrideBindingClick(notice, true, "PAD3", "FlickChatNoticeCheck")
+                SetOverrideBindingClick(notice, true, "PAD2", "FlickChatNoticeOkay")
+            end
+        end
+        notice:SetScript("OnEvent", function(self) Pad(self:IsShown()) end)
         notice:SetScript("OnShow", function(self)
             check:SetChecked(ROWS.hideLine[1]())
-            self:SetHeight(22 + title:GetStringHeight() + 10 + text:GetStringHeight() + 10 + 32
-                + math.max(0, label:GetStringHeight() - 18) + 26 + keys:GetStringHeight() + 52)
-            self:EnableGamePadButton(true)
+            Tell()
+            Pad(true)
         end)
-        notice:SetScript("OnHide", function(self) self:EnableGamePadButton(false) end)
+        notice:SetScript("OnHide", function() Pad(false) end)
         options.notice = notice
     end
     notice:Show()

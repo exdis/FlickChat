@@ -1423,7 +1423,8 @@ Paint = function()
         else
             lit = word and word:lower() == shown
         end
-        local color = lit and YELLOW or IDLE
+        -- While the lesson points at a d-pad word, that one alone is yellow (not the one the box shows too).
+        local color = lit and not (S.lesson and S.lesson.slot) and YELLOW or IDLE
         if S.forget and word and word:lower() == S.forget:lower() then color = FORGET_COLOR end
         -- The lesson's "it is over the d-pad": that word beats, so the eye finds it.
         local beat = S.lesson ~= nil and S.lesson.slot == i
