@@ -457,17 +457,21 @@ local function OnStick(_, which, x, y, len)
         if len >= arm then
             st.out, st.at, st.px, st.py, st.peak, st.held = true, GetTime(), x, y, len, false
             st.dir, st.settled = nil, false
-            if S.symbols then Paint() end
             -- A fast flick can reach the rim on its first reading: that is its direction.
             if rolling then Roll(st, x, y, len) end
+            -- The box the stick points at lights as the stick gets there, not when its flick is counted.
+            Paint()
         end
     elseif len <= ns.db.rearm then
         st.out = false
         Release(st, GetTime())
+        Paint()
     else
+        local was = st.dir or Dir4(st.px, st.py)
         if len > st.peak then st.px, st.py, st.peak = x, y, len end
         -- The symbols page holds a group on one stick and the phrases take one flick: no rolls there.
         if rolling and not st.held then Roll(st, x, y, len) end
+        if (st.dir or Dir4(st.px, st.py)) ~= was then Paint() end
     end
     local dot = kb.roses[st.base == 0 and 1 or 2].dot
     dot:SetPoint("CENTER", dot:GetParent(), "CENTER", x * HUB_R, y * HUB_R)
@@ -1009,7 +1013,8 @@ local function PaintRose(rose, st)
         else
             cell.text:SetText(picking and "" or GroupText(groups[digit]))
         end
-        local gold = (cell.flashUntil or 0) > now or digit == lit
+        local pointed = st.out and not S.symbols and (st.dir or Dir4(st.px, st.py)) == dir
+        local gold = (cell.flashUntil or 0) > now or digit == lit or pointed
         cell.lit:SetShown(gold)
         cell.focus:SetShown(not gold and Holding(st) and Dir4(st.px, st.py) == dir)
         local color = gold and YELLOW or LETTER_COLOR
