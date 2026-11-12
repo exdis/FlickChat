@@ -2075,8 +2075,11 @@ function ns.PreviewKeyboard(under)
         end
         return
     end
-    if box then return end
     if not kb then Build() end
+    -- Not while chat is really being typed in. A chat box left set with the keyboard hidden (an open that never
+    -- finished) is let go, and so is a lesson left unfinished: the preview is the bare keyboard.
+    if box and kb:IsShown() then return end
+    box, S.lesson = nil, nil
     S.preview = true
     Reset("")
     S.slots = { "hello", "the", "you", "thanks" }
