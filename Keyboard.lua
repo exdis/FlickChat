@@ -1362,7 +1362,7 @@ local function LessonText()
         end
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
-        if shown ~= target:sub(1, #S.flicks) then
+        if shown ~= target:sub(1, #S.flicks) and not lesson.missed then
             return L["LESSON_GUESSING"]:format(Word(), Groups()[tonumber(key:sub(i - 1, i - 1))]) .. "\n\n" .. line
         end
         return line
