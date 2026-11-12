@@ -36,8 +36,8 @@ local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight",
 LESSON.last = "ty :)"
 -- The word that teaches chained flicks (its first five letters are all on one stick), as a drill: its first two
 -- letters in one move, then four, then all five (the fifth a swing straight across the middle). A stage not
--- done in one move is asked again, and let through after LESSON.misses of them.
-LESSON.roll, LESSON.stages, LESSON.misses = 4, { 2, 4, 5 }, 3
+-- done in one move is asked again, as often as it takes (Y skips the lesson).
+LESSON.roll, LESSON.stages = 4, { 2, 4, 5 }
 local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [8] = true }, { [5] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
 -- A d-pad slot's direction word (DIR_n): up, left, right, down.
 local SLOT_DIR = { 1, 4, 2, 3 }
@@ -553,12 +553,12 @@ function LESSON.Drill(late)
         if (tonumber(want:sub(i, i)) - tonumber(want:sub(i - 1, i - 1))) % 2 == 1 then rolls = rolls + 1 end
     end
     local good = S.flicks == want and (lesson.rolls or 0) >= rolls
-    if good or (lesson.missCount or 0) + 1 >= LESSON.misses then
-        lesson.stage, lesson.missCount, lesson.missed, lesson.praise = stage + 1, 0, false, good
+    if good then
+        lesson.stage, lesson.missed, lesson.praise = stage + 1, false, true
         lesson.chained = stage == #LESSON.stages
-        if not (lesson.chained and good) then S.flicks = "" end
+        if not lesson.chained then S.flicks = "" end
     else
-        lesson.missCount, lesson.missed, lesson.praise = (lesson.missCount or 0) + 1, true, false
+        lesson.missed, lesson.praise = true, false
         S.flicks = ""
     end
     lesson.rolls, S.literal = 0, nil
