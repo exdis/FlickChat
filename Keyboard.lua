@@ -1532,10 +1532,11 @@ Paint = function()
             if LESSON_LINE_END[i] then break end
         end
         goal = L["LESSON_GOAL"]:format(table.concat(words, " "))
-        if kb.goalSize ~= size then
-            kb.hintGoal:SetFont(STANDARD_TEXT_FONT, size + 2, "OUTLINE")
-            kb.goalSize = size
-        end
+    end
+    -- A font before any text, the lesson running or not: text set on a fontless string is an error.
+    if kb.goalSize ~= size then
+        kb.hintGoal:SetFont(STANDARD_TEXT_FONT, size + 2, "OUTLINE")
+        kb.goalSize = size
     end
     kb.hintGoal:SetText(goal)
     kb.hintBack:SetPoint("TOPLEFT", kb.hint, "TOPLEFT", -8, 7 + (goal ~= "" and size + 14 or 0))

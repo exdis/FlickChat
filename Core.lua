@@ -517,22 +517,33 @@ function ns.StyleNotice()
             if on then
                 swap:ClearAllPoints()
                 swap:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 20)
+                -- Only the switch needs a press the game counts as the player's own.
                 if classic then SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap") end
-                SetOverrideBindingClick(notice, true, "PADLSHOULDER", "FlickChatNoticeSmaller")
-                SetOverrideBindingClick(notice, true, "PADRSHOULDER", "FlickChatNoticeLarger")
-                SetOverrideBindingClick(notice, true, "PAD3", "FlickChatNoticeCheck")
-                SetOverrideBindingClick(notice, true, "PAD2", "FlickChatNoticeOkay")
             end
         end
+        -- The size, the box and Okay are the notice's own pad presses.
+        notice:SetScript("OnGamePadButtonDown", function(self, button)
+            if button == "PADLSHOULDER" or button == "PADRSHOULDER" then
+                local step = _G[button == "PADLSHOULDER" and "FlickChatNoticeSmaller" or "FlickChatNoticeLarger"]
+                step:GetScript("OnClick")(step)
+            elseif button == "PAD3" then
+                check:SetChecked(not check:GetChecked())
+                check:GetScript("OnClick")(check)
+            elseif button == "PAD2" then
+                self:Hide()
+            end
+        end)
         notice:SetScript("OnEvent", function(self) self.Pad(self:IsShown()) end)
         notice:SetScript("OnShow", function(self)
             self.switched = false
             check:SetChecked(ROWS.hideLine[1]())
             self.Pad(true)
+            self:EnableGamePadButton(true)
             if ns.PreviewKeyboard then ns.PreviewKeyboard(self) end
         end)
         notice:SetScript("OnHide", function(self)
             ns.db.welcomed = true
+            self:EnableGamePadButton(false)
             self.Pad(false)
             if ns.PreviewKeyboard then ns.PreviewKeyboard() end
         end)
