@@ -1800,10 +1800,13 @@ PlaceBy = function(edit)
     -- Beside the chat line, plus how far the player carried it (kept in screen units, whatever its size).
     local scale = kb:GetScale()
     local dx, dy = (ns.db.moveX or 0) / scale, (ns.db.moveY or 0) / scale
+    -- Off the typing line's top corner, with room under it for two lines of hint: those then stand beside the
+    -- typing line, clear of the button bar under it.
+    dy = dy + 36
     if left then
-        kb:SetPoint("BOTTOMLEFT", edit, "BOTTOMRIGHT", 12 + dx, dy)
+        kb:SetPoint("BOTTOMLEFT", edit, "TOPRIGHT", 12 + dx, dy)
     else
-        kb:SetPoint("BOTTOMRIGHT", edit, "BOTTOMLEFT", -12 + dx, dy)
+        kb:SetPoint("BOTTOMRIGHT", edit, "TOPLEFT", -12 + dx, dy)
     end
 end
 
