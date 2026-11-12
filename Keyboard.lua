@@ -32,7 +32,8 @@ local MISSING_PAUSE = 1.2
 -- d-pad has them); its flicks, taken at a light tilt, set the player's own.
 -- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
-local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty" }
+local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty", ":", ")" }
+LESSON.last = "ty :)"
 -- The word that teaches chained flicks (its first five letters are all on one stick), as a drill: its first two
 -- letters in one move, then four, then all five (the fifth a swing straight across the middle). A stage not
 -- done in one move is asked again, and let through after LESSON.misses of them.
@@ -1175,11 +1176,21 @@ local function LessonText()
     local lesson = S.lesson
     local target = LESSON[lesson.at]
     lesson.next, lesson.slot = nil, nil
-    if not target then return L["LESSON_SEND"]:format(LESSON[#LESSON], Glyph("PAD1")) end
-    if target == "?" then
-        if not S.symbols then return L["LESSON_PUNCT"]:format(Glyph("PAD3")) end
-        lesson.next = 3
-        return L["LESSON_PUNCT_FLICK"]
+    if not target then return L["LESSON_SEND"]:format(LESSON.last, Glyph("PAD1")) end
+    -- A symbol: the page first; then a flick for a box's first symbol, the hold and pick for any other.
+    if not target:find("%a") then
+        if not S.symbols then return L["LESSON_SYMBOLS"]:format(target, Glyph("PAD3")) end
+        local box, place
+        for g, symbols in ipairs(SYMBOLS) do
+            local at = symbols:find(target, 1, true)
+            if at then box, place = g, at end
+        end
+        lesson.next = box
+        local left = box <= 4
+        local stick, way = L[left and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((box - 1) % 4 + 1)]
+        if place == 1 then return L["LESSON_SYMBOL_FLICK"]:format(stick, way, target) end
+        return L["LESSON_SYMBOL_HOLD"]:format(target, SYMBOLS[box], stick, way,
+            L[left and "STICK_RIGHT" or "STICK_LEFT"], L["DIR_" .. place], target)
     end
     local key = D.KeyOf(target)
     if lesson.at == LESSON.roll and not lesson.chained then
@@ -1221,9 +1232,9 @@ local function LessonText()
     local rolling = lesson.at == LESSON.roll
     -- The drill just done: a word of praise before the rest of the word.
     if rolling and lesson.praise then intro = L["LESSON_CHAIN_GOOD"] .. " " end
-    -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
-    -- teach. A next word guessed before any flick counts too (the last word, sent with A, is always flicked).
-    if #S.flicks < #key then
+    -- A word standing over the d-pad is taken there, however much of it was flicked and whatever the player's own
+    -- words put there: watching for it is the habit to teach. Only a word the box already shows is left to RT.
+    if #S.flicks < #key or shown ~= target then
         for slot = 1, #SLOT_KEYS do
             if (S.slots[slot] or ""):lower() == target
                 and (#S.flicks > 0 or lesson.at < #LESSON)
@@ -1547,7 +1558,9 @@ Paint = function()
         end
         for i = first, #LESSON do
             local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. LESSON[i] .. "|r"
-            if LESSON[i] == "?" and #words > 0 then words[#words] = words[#words] .. word else words[#words + 1] = word end
+            -- a question mark closes its word, a symbol after a symbol joins it (the smiley)
+            local joins = #words > 0 and (LESSON[i] == "?" or (not LESSON[i]:find("%a") and not LESSON[i - 1]:find("%a")))
+            if joins then words[#words] = words[#words] .. word else words[#words + 1] = word end
             if LESSON_LINE_END[i] then break end
         end
         goal = L["LESSON_GOAL"]:format(table.concat(words, " "))
