@@ -33,6 +33,9 @@ local MISSING_PAUSE = 1.2
 -- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
 local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty" }
+-- The word that teaches chained flicks (its first letters sit side by side on one stick): taken with fewer than
+-- LESSON.rolls of them rolled it comes back out to be tried again, LESSON.tries times at most.
+LESSON.roll, LESSON.rolls, LESSON.tries = 4, 2, 2
 local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [8] = true }, { [5] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
 -- A d-pad slot's direction word (DIR_n): up, left, right, down.
 local SLOT_DIR = { 1, 4, 2, 3 }
@@ -197,8 +200,14 @@ local function LessonStep(done)
     if not lesson or done:lower() ~= LESSON[lesson.at] then return end
     -- A line done: the box is emptied for the next.
     if LESSON_LINE_END[lesson.at] then S.committed, S.autoSpace, S.undo = "", false, nil end
+    if lesson.at == LESSON.roll and (lesson.rolls or 0) < LESSON.rolls and (lesson.rollTries or 0) < LESSON.tries then
+        lesson.rollTries, lesson.rolls = (lesson.rollTries or 0) + 1, 0
+        if S.undo then S.committed = S.undo.committed end
+        S.undo, S.autoSpace = nil, false
+        return
+    end
     -- Past the last word the lesson waits for the send (Send ends it).
-    lesson.at = lesson.at + 1
+    lesson.at, lesson.rolls = lesson.at + 1, 0
 end
 
 local function Commit(word, space)
@@ -514,6 +523,7 @@ local function Roll(st, x, y, len)
     elseif Off(degrees, st.dir) >= TURN then
         local now = GetTime()
         if probe then Note(string.format("roll %d -> %d", st.base + st.dir, st.base + dir)) end
+        if S.lesson then S.lesson.rolls = (S.lesson.rolls or 0) + 1 end
         Release(st, now)
         st.at, st.px, st.py, st.peak, st.held = now, x, y, len, false
         st.dir, st.settled = dir, Off(degrees, dir) <= SETTLED
@@ -1153,12 +1163,17 @@ local function LessonText()
     local shown = (Word() or ""):lower()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n\n" or ""
+    local rolling = lesson.at == LESSON.roll
+    if rolling and #S.flicks == 0 then
+        intro = L[(lesson.rollTries or 0) > 0 and "LESSON_ROLL_RETRY" or "LESSON_ROLL"]:format(target) .. "\n\n"
+    end
     -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
     -- teach. A next word guessed before any flick counts too (the last word, sent with A, is always flicked).
     if #S.flicks < #key then
         for slot = 1, #SLOT_KEYS do
             if (S.slots[slot] or ""):lower() == target
-                and (#S.flicks > 0 or lesson.at < #LESSON) then
+                and (#S.flicks > 0 or lesson.at < #LESSON)
+                and (not rolling or (lesson.rolls or 0) >= LESSON.rolls) then
                 local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
                 lesson.slot = slot
                 return intro .. L[line]:format(target, L["DIR_" .. SLOT_DIR[slot]])
@@ -1176,6 +1191,11 @@ local function LessonText()
         -- A word's first flick names the word (the line's first word, or the next); its later ones carry on.
         local line = L[i > 1 and "LESSON_FLICK_ON" or opens and "LESSON_FLICK_FIRST" or "LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
             L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
+        -- On the rolled word a letter next door on the same stick is rolled to, not flicked.
+        local before = i > 1 and tonumber(key:sub(i - 1, i - 1))
+        if rolling and before and (before <= 4) == (digit <= 4) and (before - digit) % 2 == 1 then
+            line = L["LESSON_ROLL_ON"]:format(Groups()[digit], target:sub(i, i))
+        end
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
         if shown ~= target:sub(1, #S.flicks) then
