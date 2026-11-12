@@ -57,6 +57,7 @@ L["MOVE_NEXT"] = "ouvrez le chat : les sticks déplacent et redimensionnent alor
 L["MOVE_RESET"] = "Réinitialiser"
 L["MOVE_SAVED"] = "le clavier reste là."
 L["HINT_MOVE"] = "Stick gauche : déplacer le clavier. Stick droit vers le haut ou le bas : sa taille. %s le garde, %s le remet, %s est la place et la taille d'origine."
+L["MOVE_SLICE"] = "Déplacer le clavier"
 L["DRAFT_BACK"] = "Votre message non envoyé est de retour. %s l'efface."
 L["FORGET_ASK"] = "Oublier « %s » ? Il ne sera plus proposé. %s l'oublie, tout autre bouton le garde."
 L["FORGOT"] = "« %s » oublié. Écrivez-le en lettres exactes pour le retrouver."

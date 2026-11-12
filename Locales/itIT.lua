@@ -57,6 +57,7 @@ L["MOVE_NEXT"] = "apri la chat: le levette spostano e ridimensionano la tastiera
 L["MOVE_RESET"] = "Ripristina"
 L["MOVE_SAVED"] = "la tastiera resta lì."
 L["HINT_MOVE"] = "Levetta sinistra: sposta la tastiera. Levetta destra su o giù: la sua dimensione. %s la tiene, %s la rimette, %s è il posto e la dimensione di partenza."
+L["MOVE_SLICE"] = "Sposta tastiera"
 L["DRAFT_BACK"] = "Il tuo messaggio non inviato è tornato. %s lo cancella."
 L["FORGET_ASK"] = "Dimenticare \"%s\"? Non sarà più suggerita. %s la dimentica, ogni altro tasto la tiene."
 L["FORGOT"] = "\"%s\" dimenticata. Scrivila con le lettere esatte per riaverla."

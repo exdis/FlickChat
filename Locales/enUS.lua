@@ -54,6 +54,7 @@ ns.EN = {
     MOVE_RESET = "Reset",
     MOVE_SAVED = "the keyboard stays there.",
     HINT_MOVE = "Left stick: move the keyboard. Right stick up or down: its size. %s keeps it, %s puts it back, %s is the place and size it came with.",
+    MOVE_SLICE = "Move keyboard",
     DRAFT_BACK = "Your unsent message is back. %s clears it.",
     FORGET_ASK = "Forget \"%s\"? It will not be suggested again. %s forgets it, any other button keeps it.",
     FORGOT = "forgot \"%s\". Spell it in exact letters to have it back.",

@@ -297,6 +297,7 @@ end
 
 local function SwitchTo(pick, digit)
     if not pick then return end
+    if pick.move then return ns.StartMove() end
     if pick.naming then
         local names = ns.WhisperNames()
         S.naming = { flicks = "", names = names, found = D.MatchNames(names, "") }
@@ -464,6 +465,8 @@ function Move.Start()
     end)
     Paint()
 end
+
+ns.StartMove = Move.Start
 
 function Move.Stick(which, x, y, len)
     local move = S.move

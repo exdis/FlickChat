@@ -468,6 +468,8 @@ function ns.WheelPages()
         { label = Named("OFFICER"), chatType = "OFFICER", off = not guild },
         { label = Named("YELL"), chatType = "YELL" },
         { label = Named("EMOTE"), chatType = "EMOTE" },
+        -- The last slice is no channel: the sticks then carry and size the keyboard.
+        { label = L["MOVE_SLICE"], move = true },
     }
     local people, seen = {}, {}
     if UnitIsPlayer("target") and not UnitIsUnit("target", "player") then

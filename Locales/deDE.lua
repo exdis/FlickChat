@@ -58,6 +58,7 @@ L["MOVE_NEXT"] = "öffne den Chat: die Sticks verschieben und skalieren dann die
 L["MOVE_RESET"] = "Zurücksetzen"
 L["MOVE_SAVED"] = "die Tastatur bleibt dort."
 L["HINT_MOVE"] = "Linker Stick: Tastatur verschieben. Rechter Stick hoch oder runter: ihre Größe. %s behält es, %s setzt es zurück, %s ist der Platz und die Größe ab Werk."
+L["MOVE_SLICE"] = "Tastatur verschieben"
 L["DRAFT_BACK"] = "Deine ungesendete Nachricht ist wieder da. %s löscht sie."
 L["FORGET_ASK"] = "\"%s\" vergessen? Es wird nicht mehr vorgeschlagen. %s vergisst es, jede andere Taste behält es."
 L["FORGOT"] = "\"%s\" vergessen. Mit genauen Buchstaben geschrieben ist es wieder da."
