@@ -490,7 +490,7 @@ function ns.StyleNotice()
         rule:SetHeight(1)
         rule:SetPoint("LEFT", notice, "LEFT", EDGE, 0)
         rule:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
-        rule:SetPoint("TOP", check, "BOTTOM", 0, -14)
+        rule:SetPoint("TOP", note, "BOTTOM", 0, -16)
         local warn = Line(rule, 14, "GameFontNormal")
         warn:SetJustifyH("CENTER")
         -- The switch itself: the game's own console command, run by a secure button on the player's press, so
@@ -518,6 +518,11 @@ function ns.StyleNotice()
             swap:SetText(L["NOTICE_SWAP"] .. "   " .. Glyph("PAD1"))
             rule:SetShown(section)
             warn:SetShown(section)
+            -- The hide-line box is IM style's: there from the start on IM style, under the section once switched.
+            check:SetShown(not classic)
+            label:SetShown(not classic)
+            check:ClearAllPoints()
+            check:SetPoint("TOPLEFT", section and warn or note, "BOTTOMLEFT", -4, -10)
             if classic then
                 warn:SetText(L["NOTICE_STYLE"])
                 warn:SetTextColor(1, 0.25, 0.2)
@@ -526,8 +531,9 @@ function ns.StyleNotice()
                 warn:SetTextColor(0.4, 0.9, 0.4)
             end
             local height = 22 + title:GetStringHeight() + 12 + text:GetStringHeight() + 18 + size:GetStringHeight() + 14
-                + note:GetStringHeight() + 10 + 32 + math.max(0, label:GetStringHeight() - 18)
-            if section then height = height + 14 + 1 + 14 + warn:GetStringHeight() + (classic and 14 + 36 or 0) end
+                + note:GetStringHeight()
+            if section then height = height + 16 + 1 + 14 + warn:GetStringHeight() + (classic and 14 + 36 or 0) end
+            if not classic then height = height + 10 + 32 + math.max(0, label:GetStringHeight() - 18) end
             notice:SetHeight(height + 22)
             return classic
         end
@@ -538,8 +544,21 @@ function ns.StyleNotice()
                 notice.Pad(true)
             end)
         end)
-        -- A is the switch's (a press the game counts as the player's own). Bindings and the secure button are
-        -- a fight's to refuse: both wait one out.
+        -- On Classic style the pad buttons are key bindings to the window's own buttons, and the window takes
+        -- no pad presses itself: the switch needs a press the game counts as the player's, and a press the
+        -- window took never reaches it (measured). The game's controller mode sets its own pad bindings over
+        -- ours as it goes, so ours go back whenever it does. On IM style the window reads the pad itself.
+        local BOUND = { PAD1 = "FlickChatNoticeSwap", PAD2 = "FlickChatNoticeClose", PADLSHOULDER = "FlickChatNoticeSmaller",
+            PADRSHOULDER = "FlickChatNoticeLarger" }
+        local function Bind()
+            notice.binding = true
+            for key, button in pairs(BOUND) do SetOverrideBindingClick(notice, true, key, button) end
+            notice.binding = false
+        end
+        hooksecurefunc("SetOverrideBindingClick", function(owner, _, key)
+            if notice.bound and not notice.binding and owner ~= notice and BOUND[key] and not InCombatLockdown() then Bind() end
+        end)
+        -- Bindings and the secure button are a fight's to refuse: both wait one out.
         function notice.Pad(on)
             local classic = Tell()
             if InCombatLockdown() then
@@ -550,25 +569,18 @@ function ns.StyleNotice()
             notice:UnregisterEvent("PLAYER_REGEN_ENABLED")
             swap:SetAlpha(1)
             swap:SetShown(on and classic)
+            notice.bound = on and classic
             ClearOverrideBindings(notice)
+            notice:EnableGamePadButton(on and not classic)
             if on and classic then
                 swap:ClearAllPoints()
                 -- to the window itself: a secure button cannot hang on a piece of text
                 swap:SetPoint("BOTTOM", notice, "BOTTOM", 0, 22)
-                SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap")
+                Bind()
             end
         end
-        -- The size, the box and closing are the window's own pad presses.
+        -- On IM style: the size, the box and closing are the window's own pad presses.
         notice:SetScript("OnGamePadButtonDown", function(self, button)
-            -- A is let through to the key bindings, where it presses the switch (a press the game counts as the
-            -- player's). The game's controller mode sets its own pad bindings over ours as it goes, so ours is
-            -- set again here, just before the press reaches them. Every other button stops at this window.
-            local switch = button == "PAD1" and swap:IsShown() and not InCombatLockdown()
-            if not InCombatLockdown() then self:SetPropagateKeyboardInput(switch) end
-            if switch then
-                SetOverrideBindingClick(self, true, "PAD1", "FlickChatNoticeSwap")
-                return
-            end
             if button == "PADLSHOULDER" then
                 minus:GetScript("OnClick")(minus)
             elseif button == "PADRSHOULDER" then
@@ -585,12 +597,10 @@ function ns.StyleNotice()
             self.switched = false
             check:SetChecked(ROWS.hideLine[1]())
             self.Pad(true)
-            self:EnableGamePadButton(true)
             if ns.PreviewKeyboard then ns.PreviewKeyboard(self) end
         end)
         notice:SetScript("OnHide", function(self)
             ns.db.welcomed = true
-            self:EnableGamePadButton(false)
             self.Pad(false)
             if ns.PreviewKeyboard then ns.PreviewKeyboard() end
         end)
