@@ -61,6 +61,8 @@ local own = { total = 0, mix = 0, next = {}, ctx = {} }
 local best = { words = {}, lows = {}, scores = {}, n = 0, cap = GUESSES }
 -- The likeliest word spelled by exactly these flicks, no misflick: it always gets a d-pad slot.
 local exact = { score = -math.huge }
+-- The same for the words the counted sentences never held (tags, shorthand, names, the player's own): rfc after "to".
+local tag = { score = -math.huge }
 -- The letters so far: each word's first n letters, summed by its chance (scratch, emptied each decode).
 local stems = {}
 -- The letter runs some word spells with exactly these flicks, no misflick taken (scratch too).
@@ -326,18 +328,19 @@ function D.Refresh(names)
     end
     wipe(extras)
     local seen = {}
-    local function Add(word, chance)
+    -- ours: shorthand, game words and the player's own stand beside a listed word of the same letters.
+    local function Add(word, chance, ours)
         local low = word:lower()
         local key = KeyOf(word)
-        if seen[low] or D.Known(low) or not key or key == "" then return end
+        if seen[low] or (not ours and D.Known(low)) or not key or key == "" then return end
         seen[low] = true
         extras[#extras + 1] = { word = word, low = low, key = key, chance = chance }
     end
     for name, chance in pairs(names or {}) do Add(name, chance) end
     local function Like(low) return idOf[low] and prob[idOf[low]] or FALLBACK_CHANCE end
-    for word in (db.myWords or ""):gmatch("%S+") do Add(word, Like(OWN_WORD_LIKE)) end
-    for word in CHAT_MORE:gmatch("%S+") do Add(word, Like(CHAT_LIKE)) end
-    for word in GAME_MORE:gmatch("%S+") do Add(word, Like(GAME_LIKE)) end
+    for word in (db.myWords or ""):gmatch("%S+") do Add(word, Like(OWN_WORD_LIKE), true) end
+    for word in CHAT_MORE:gmatch("%S+") do Add(word, Like(CHAT_LIKE), true) end
+    for word in GAME_MORE:gmatch("%S+") do Add(word, Like(GAME_LIKE), true) end
     for low in pairs(db.learned) do Add(db.forms[low] or low, 1e-7) end
 end
 
@@ -494,7 +497,10 @@ local function Walk(seq, n, i, prefix, lo, hi, cost, subs, prevId, prevLow)
                 local extra = #keys[id] - n
                 local score = Score(id, lows[id], nil, prevId, prevLow) + cost
                 if extra <= maxExtra then Keep(words[id], lows[id], score - extra * EXTRA_COST) end
-                if extra == 0 and cost == 0 then Exact(words[id], lows[id], score) end
+                if extra == 0 and cost == 0 then
+                    Exact(words[id], lows[id], score)
+                    if not pairLines[id] and score > tag.score then tag.word, tag.low, tag.score = words[id], lows[id], score end
+                end
                 local stem = apostrophe[id] and StemOf(words[id], n) or sub(words[id], 1, n)
                 AddStem(stem, score + (extra == 0 and WHOLE_WORD or 0), cost == 0)
             end
@@ -538,6 +544,16 @@ local function Match(key, seq)
     return cost - extra * EXTRA_COST
 end
 
+-- A word owed a d-pad slot goes in at the last free one, or over the guess there; the slot the next may take.
+local function Slot(guesses, pick, at)
+    if not pick.word then return at end
+    for _, word in ipairs(guesses) do
+        if lower(word) == pick.low then return at end
+    end
+    guesses[math.min(#guesses + 1, at)] = pick.word
+    return at - 1
+end
+
 -- For a string of flicked digits (a misflick or two allowed on longer words): the best whole-word guesses, then
 -- the likeliest letters so far, one per flick.
 function D.Decode(seq, prevLow)
@@ -547,6 +563,7 @@ function D.Decode(seq, prevLow)
     local n = #seq
     if n == 0 then return Result(), {} end
     exact.word, exact.score = nil, -math.huge
+    tag.word, tag.score = nil, -math.huge
     filtering, forgot = ns.db.matureFilter == true, ns.db.forgot
     local prevId = PrevId(prevLow)
     Walk(seq, n, 1, "", 1, #sorted + 1, 0, 0, prevId, prevLow)
@@ -558,14 +575,16 @@ function D.Decode(seq, prevLow)
             local extra = #e.key - n
             AddStem(StemOf(e.word, n), score + extra * EXTRA_COST + (extra == 0 and WHOLE_WORD or 0),
                 sub(e.key, 1, n) == seq)
-            if e.key == seq then Exact(e.word, e.low, score) end
+            if e.key == seq then
+                Exact(e.word, e.low, score)
+                if score > tag.score then tag.word, tag.low, tag.score = e.word, e.low, score end
+            end
         end
     end
     local guesses = Result()
-    if exact.word and n >= 3 then
-        local shown = false
-        for _, word in ipairs(guesses) do shown = shown or lower(word) == exact.low end
-        if not shown then guesses[math.min(#guesses + 1, GUESSES)] = exact.word end
+    if n >= 3 then
+        local at = Slot(guesses, tag, GUESSES)
+        Slot(guesses, exact, at)
     end
     return guesses, Stems()
 end
