@@ -1290,7 +1290,8 @@ local function Labels()
     labels.PADRTRIGGER = L["KEEP"]
     labels.PAD4 = S.lesson and L["LESSON_SKIP"] or L["CHANNEL"]
     labels.PAD3 = S.phrases and L["SAVE_PHRASE"] or S.symbols and L["LETTERS"] or L["SYMBOLS"]
-    labels.PAD2, labels.PAD1 = L["CLOSE"], L["SEND_PHRASES"]
+    -- In a fight the game lets no addon close chat: B puts the keyboard away and the game's own B closes it.
+    labels.PAD2, labels.PAD1 = L[InCombatLockdown() and "CLOSE_FIGHT" or "CLOSE"], L["SEND_PHRASES"]
     -- A settings box: A saves what is typed, B leaves it as it was; no channels there.
     if box and not box.chatFrame then
         labels.PAD1, labels.PAD2, labels.PAD4 = L["SAVE"], L["CANCEL"], ""

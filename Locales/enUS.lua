@@ -48,6 +48,7 @@ ns.EN = {
     GUESSING = "Back to guessing",
     CHANNEL = "Channels",
     CLOSE = "Close",
+    CLOSE_FIGHT = "Close (twice in a fight)",
     HINT_EXACT = "Exact letters: flick to a box, then flick toward its letter.",
     HINT_EXACT_PICK = "Now flick toward the letter.",
     HINT_PHRASES_FILL = "Flick toward a phrase, or several: they join your message. %s saves what you typed as a phrase. Let go of %s to go back.",
