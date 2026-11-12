@@ -2232,7 +2232,15 @@ local function Watch(edit)
     edit:HookScript("OnEditFocusGained", function()
         if chatProbe then ChatNote(("%s gained focus (pad %s) by %s"):format(edit:GetName() or "box",
             tostring(IsUsingGamepad()), Caller())) end
-        if ns.db.enabled and IsUsingGamepad() and box ~= edit then Open(edit) end
+        -- A chat box still set with the keyboard hidden is a leftover (an open that did not finish): open anew.
+        local function Try()
+            if ns.db.enabled and IsUsingGamepad() and edit:HasFocus() and (box ~= edit or not kb or not kb:IsShown()) then
+                Open(edit)
+            end
+        end
+        Try()
+        -- Chat opened by a pad press right after the keys were in use: the game says "controller" a moment later.
+        C_Timer.After(0.15, Try)
     end)
     edit:HookScript("OnEditFocusLost", function()
         if edit.chatFrame then C_Timer.After(0, function() FadeLine(edit) end) end
@@ -2245,7 +2253,7 @@ ns.Watch = Watch
 
 -- The controller picked up while a chat box has focus: the keyboard comes up then.
 function ns.PadActive(active)
-    if not active or not ns.db.enabled or box then return end
+    if not active or not ns.db.enabled or (box and kb and kb:IsShown()) then return end
     local focus = GetCurrentKeyBoardFocus()
     if focus and edits[focus] then Open(focus) end
 end
