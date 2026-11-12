@@ -15,7 +15,7 @@ local function Build()
     pane:Hide()
     local back = pane:CreateTexture(nil, "BACKGROUND")
     back:SetAllPoints()
-    back:SetColorTexture(0.04, 0.04, 0.05, 0.92)
+    back:SetColorTexture(0.04, 0.04, 0.05, 1)
     pane.title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     pane.title:SetPoint("TOPLEFT", 10, -8)
     pane.title:SetText(L["PRACTICE_TITLE"])
@@ -152,10 +152,13 @@ function ns.StartPractice(edit)
     local chat = edit.chatFrame
     if not chat or chat:IsForbidden() then return end
     if not pane then Build() end
+    -- Over the whole chat window (its background runs a little past its text area), and a strata above it: the
+    -- chat's own lines are drawn by child frames that stand over anything at the window's own level.
+    local back = chat.GetName and _G[(chat:GetName() or "") .. "Background"]
     pane:ClearAllPoints()
-    pane:SetAllPoints(chat)
-    pane:SetFrameStrata(chat:GetFrameStrata())
-    pane:SetFrameLevel(chat:GetFrameLevel() + 6)
+    pane:SetAllPoints(back and not back:IsForbidden() and back or chat)
+    pane:SetFrameStrata("DIALOG")
+    pane:SetFrameLevel(1)
     pane:Show()
     ns.practice = practice
     Begin()
