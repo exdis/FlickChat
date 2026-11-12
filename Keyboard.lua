@@ -346,7 +346,7 @@ end
 
 local function Emit(digit)
     Sync()
-    S.forget = nil
+    S.forget, S.draftBack = nil, nil
     if S.aDown and not S.phrases then OpenPhrases() end
     if S.phrases then
         if S.phraseSave then return SavePhrase(digit) end
@@ -640,6 +640,7 @@ Send = function()
     local word = Word()
     if word then Commit(word, false) end
     local text = S.committed:gsub("%s+$", "")
+    draft = nil
     if ns.dev and ns.dev.Send and ns.dev.Send(text) then
         box:SetText("")
         Reset("")
@@ -671,11 +672,15 @@ local function ClearAll()
     Show()
 end
 
+-- An unsent chat message closed with B: back in the box the next time chat opens empty.
+local draft
+
 local function Close()
     if S.naming then
         S.naming = nil
         return Paint()
     end
+    draft = box.chatFrame and not S.lesson and S.written:find("%S") and S.written or nil
     -- In a fight the game refuses a chat box's focus dropped by addon code (its controller state stays on chat):
     -- the keyboard steps back and the pad is the game's again, whose own Back shuts chat.
     if box.chatFrame and InCombatLockdown() then
@@ -881,6 +886,7 @@ end
 local function Press(button)
     if not box then return end
     Sync()
+    S.draftBack = nil
     if S.wheel then return WheelPress(button) end
     if S.forget then
         -- A forgets the word; any other button keeps it and does nothing else.
@@ -1066,6 +1072,7 @@ end
 local function Hint()
     if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
     if S.wheel then return "" end
+    if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
     if S.forget then return L["FORGET_ASK"]:format(S.forget:lower(), Glyph("PAD1")) end
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
@@ -1708,8 +1715,13 @@ local function Open(edit)
     box = edit
     S.names = Names()
     D.Refresh(S.names)
-    Reset(edit:GetText())
+    local text = edit:GetText()
     S.lesson = not ns.db.lessonDone and { at = 1, peaks = {} } or nil
+    local back = draft and edit.chatFrame and text == "" and not S.lesson
+    if back then text = draft end
+    draft = nil
+    Reset(text)
+    S.draftBack = back or nil
     ns.Restyle()
     PlaceBy(edit)
     kb.bar:ClearAllPoints()

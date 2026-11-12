@@ -45,6 +45,7 @@ ns.EN = {
     CLOSE = "Close",
     HINT_EXACT = "Exact letters: flick to a box, then flick toward its letter.",
     HINT_EXACT_PICK = "Now flick toward the letter.",
+    DRAFT_BACK = "Your unsent message is back. %s clears it.",
     FORGET_ASK = "Forget \"%s\"? It will not be suggested again. %s forgets it, any other button keeps it.",
     FORGOT = "forgot \"%s\". Spell it in exact letters to have it back.",
     OPT_FORGOT = "Words you forgot",
