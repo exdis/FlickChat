@@ -164,5 +164,5 @@ end
 -- /flick practice or the settings row: the next time chat opens.
 function ns.PracticeNext()
     ns.practiceNext = true
-    ns.Say(L["PRACTICE_NEXT"])
+    ns.Tell(L["PRACTICE_NEXT"])
 end

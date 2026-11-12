@@ -95,7 +95,7 @@ end
 -- The keyboard's place and size: set with the sticks the next time it opens.
 function ns.MoveNext()
     ns.moveNext = true
-    ns.Say(ns.L["MOVE_NEXT"])
+    ns.Tell(ns.L["MOVE_NEXT"])
 end
 
 function ns.ForgottenBack()
@@ -124,6 +124,14 @@ function ns.Learn(text)
 end
 
 function ns.Say(text) print("|cffffd100" .. ns.L["TITLE"] .. "|r " .. text) end
+
+-- What a settings button set going, in a dialog with an Okay: a chat line there is missed behind the window.
+function ns.Tell(text)
+    if not StaticPopup_Show then return ns.Say(text) end
+    StaticPopupDialogs.FLICKCHAT_TELL = StaticPopupDialogs.FLICKCHAT_TELL
+        or { text = "%s", button1 = OKAY, timeout = 0, whileDead = true, hideOnEscape = true }
+    StaticPopup_Show("FLICKCHAT_TELL", (text:gsub("^%l", string.upper)))
+end
 
 -- Quick phrases by slot (1-4 the left stick's up, right, down, left; 5-8 the right's): the player's own, else the
 -- language's default. A phrase emptied or set back to its default is the default again.
@@ -274,50 +282,54 @@ function ns.BuildOptions()
     if options.category or not (Settings and Settings.RegisterVerticalLayoutCategory) then return end
     local L = ns.L
     local category, layout = Settings.RegisterVerticalLayoutCategory(C_AddOns.GetAddOnMetadata(addonName, "Title"))
+    local function Head(text)
+        if CreateSettingsListSectionHeaderInitializer then
+            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
+        end
+    end
+    local function Button(name, text, press, tip)
+        layout:AddInitializer(CreateSettingsButtonInitializer(name, text, press, tip, true))
+    end
+    -- Every check box together, first.
+    Head(L["OPT_HEAD_OPTIONS"])
     Settings.CreateCheckbox(category, Row(category, "lowercase", "boolean", L["OPT_LOWERCASE"], false))
     Settings.CreateCheckbox(category, Row(category, "matureFilter", "boolean", L["OPT_MATURE"], false))
+    Settings.CreateCheckbox(category, Row(category, "phraseSend", "boolean", L["OPT_PHRASE_SEND"], true))
     Settings.CreateCheckbox(category, Row(category, "hideLine", "boolean", L["OPT_HIDE_LINE"], false))
     Settings.CreateCheckbox(category, Row(category, "hideBar", "boolean", L["OPT_HIDE_BAR"], true))
     Settings.CreateCheckbox(category, Row(category, "hideGuide", "boolean", L["OPT_HIDE_GUIDE"], true))
     Settings.CreateCheckbox(category, Row(category, "stickTips", "boolean", L["OPT_STICK_TIPS"], true))
+    Head(L["OPT_HEAD_SIZE"])
     SizeRow(category, "size", L["OPT_SIZE"], 70, 200)
     SizeRow(category, "wordRoom", L["OPT_WORD_ROOM"], 70, 160)
     SizeRow(category, "wheelSize", L["OPT_WHEEL_SIZE"], 50, 150)
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_WORDS"], ns.MyWordsText, function(button)
-        EditPhrase(button, "words")
-    end, L["OPT_WORDS_TIP"], true))
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_CHAT_KEY"], ns.ChatKeyText, function(button)
-        ns.NextChatKey()
-        button:SetText(ns.ChatKeyText())
-    end, L["OPT_CHAT_KEY_TIP"], true))
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function()
-        ns.MoveNext()
-    end, L["OPT_MOVE_TIP"], true))
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function()
-        ns.PracticeNext()
-    end, L["OPT_PRACTICE_TIP"], true))
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function()
-        ns.RunLessonAgain()
-    end, nil, true))
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function()
-        ns.ForgottenBack()
-    end, L["OPT_FORGOT_TIP"], true))
-    Settings.CreateCheckbox(category, Row(category, "phraseSend", "boolean", L["OPT_PHRASE_SEND"], true))
+    Button(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function() ns.MoveNext() end, L["OPT_MOVE_TIP"])
+    Head(L["OPT_HEAD_PRACTICE"])
+    Button(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function() ns.PracticeNext() end, L["OPT_PRACTICE_TIP"])
+    Button(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function() ns.RunLessonAgain() end)
+    Head(L["OPT_HEAD_WORDS"])
+    Button(L["OPT_WORDS"], ns.MyWordsText, function(button) EditPhrase(button, "words") end, L["OPT_WORDS_TIP"])
+    Button(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function() ns.ForgottenBack() end, L["OPT_FORGOT_TIP"])
     -- The quick phrases: a row each, its button showing the phrase; pressed, a box over the button takes the typing
     -- (the game's rows have no text box), by keys or by the keyboard.
+    Head(L["OPT_HEAD_PHRASES"])
     for slot = 1, 8 do
-        layout:AddInitializer(CreateSettingsButtonInitializer(L["PHRASE_SLOT_" .. slot], function()
-            return ns.Phrase(slot) or ""
-        end, function(button) EditPhrase(button, slot) end, L["OPT_PHRASE_TIP"], true))
+        Button(L["PHRASE_SLOT_" .. slot], function() return ns.Phrase(slot) or "" end,
+            function(button) EditPhrase(button, slot) end, L["OPT_PHRASE_TIP"])
     end
-    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_PHRASES"], L["OPT_RESET"], function(button)
+    Button(L["OPT_PHRASES"], L["OPT_RESET"], function(button)
         ns.ResetPhrases()
         -- The phrase rows in sight show the defaults at once: their buttons' text only, the rows are the game's.
         for _, row in ipairs({ button:GetParent():GetParent():GetChildren() }) do
             local data = row.data
             if data and type(data.buttonText) == "function" and row.Button then row.Button:SetText(data.buttonText()) end
         end
-    end, nil, true))
+    end)
+    Head(L["OPT_HEAD_CONTROLLER"])
+    Button(L["OPT_CHAT_KEY"], ns.ChatKeyText, function(button)
+        ns.NextChatKey()
+        button:SetText(ns.ChatKeyText())
+    end, L["OPT_CHAT_KEY_TIP"])
     Settings.RegisterAddOnCategory(category)
     options.category = category
 end
@@ -377,7 +389,7 @@ end
 -- The first-time typing lesson comes back the next time the keyboard opens.
 function ns.RunLessonAgain()
     ns.db.lessonDone = false
-    ns.Say(ns.L["LESSON_AGAIN"])
+    ns.Tell(ns.L["LESSON_AGAIN"])
 end
 
 -- Where the settings are, in a chat line. The game's Settings window opened by addon code is ours from then on:
