@@ -1141,7 +1141,7 @@ local function LessonText()
     end
     local shown = (Word() or ""):lower()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
-    intro = intro and L[intro] .. "\n" or ""
+    intro = intro and L[intro] .. "\n\n" or ""
     -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
     -- teach. On the first line it takes a flick first; from the second a guessed next word counts too.
     if #S.flicks < #key then
@@ -1162,7 +1162,7 @@ local function LessonText()
         lesson.next = digit
         local line = L["LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
             L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
-        if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n" .. line end
+        if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
         if shown ~= target:sub(1, #S.flicks) then
             return L["LESSON_GUESSING"]:format(Word(), Groups()[tonumber(key:sub(i - 1, i - 1))]) .. "\n" .. line
@@ -1175,7 +1175,8 @@ end
 
 -- The line over the legend: what to do right now.
 local function Hint()
-    if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
+    -- The lesson's last row is left to the skip reminder, which stands at its right end.
+    if S.lesson then return LessonText() .. "\n " end
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
@@ -1421,6 +1422,11 @@ Paint = function()
         end
     end
     kb.hintBack:SetShown(lift ~= false and kb.hint:GetText() ~= nil)
+    if kb.skipSize ~= size then
+        kb.hintSkip:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+        kb.skipSize = size
+    end
+    kb.hintSkip:SetText(S.lesson and (Glyph("PAD4") .. " " .. L["LESSON_SKIP"]) or "")
     Layout()
 end
 
@@ -1713,6 +1719,10 @@ local function Build()
     kb.hintBack:SetPoint("TOPLEFT", kb.hint, "TOPLEFT", -8, 7)
     kb.hintBack:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 8, -7)
     kb.hintBack:Hide()
+    -- the lesson's way out, apart from its lines: at the right end of their last row
+    kb.hintSkip = kb:CreateFontString(nil, "ARTWORK")
+    kb.hintSkip:SetTextColor(0.82, 0.82, 0.82)
+    kb.hintSkip:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 0, 0)
     kb.bar = CreateFrame("Frame", nil, kb)
     kb.bar:SetClampedToScreen(true)
     local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
