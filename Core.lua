@@ -169,6 +169,9 @@ local ROWS = {
     stickTips = { function() return not ns.db.stickTipsOff end, function(on)
         if on then ns.db.stickTipsOff = nil else ns.db.stickTipsOff = true end
     end },
+    phraseSend = { function() return not ns.db.phraseFill end, function(on)
+        if on then ns.db.phraseFill = nil else ns.db.phraseFill = true end
+    end },
     matureFilter = { function() return ns.db.matureFilter == true end, function(on) ns.db.matureFilter = on or nil end },
     hideBar = { function() return HidesBar() end, function(on) SetHides(on, HidesGuide()) end },
     hideGuide = { function() return HidesGuide() end, function(on) SetHides(HidesBar(), on) end },
@@ -284,6 +287,7 @@ function ns.BuildOptions()
     layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function()
         ns.ForgottenBack()
     end, L["OPT_FORGOT_TIP"], true))
+    Settings.CreateCheckbox(category, Row(category, "phraseSend", "boolean", L["OPT_PHRASE_SEND"], true))
     -- The quick phrases: a row each, its button showing the phrase; pressed, a box over the button takes the typing
     -- (the game's rows have no text box), by keys or by the keyboard.
     for slot = 1, 8 do

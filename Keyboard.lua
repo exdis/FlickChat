@@ -275,7 +275,7 @@ local function SavePhrase(digit)
     Show()
 end
 
--- A phrase on an empty line goes at once; with a message under way it joins it as words.
+-- Phrases join the message as words; begun on an empty line, the message goes when A is let go.
 local function SayPhrase(pick, digit)
     S.phraseNoText = false
     if not pick then return end
@@ -290,7 +290,7 @@ local function SayPhrase(pick, digit)
     S.committed = before .. Lead() .. pick.label .. " "
     S.undo = { committed = before, flicks = "", shown = 0, after = S.committed }
     S.autoSpace = true
-    if empty then return Send() end
+    S.phraseSend = S.phraseSend or (empty and not ns.db.phraseFill)
     Guess()
     Show()
 end
@@ -620,7 +620,7 @@ local function Reset(text)
     S.guesses, S.stems, S.shown, S.slots, S.undo = {}, {}, 0, {}, nil
     S.autoSpace, S.caps, S.capsLock, S.symbols, S.wheel = false, false, false, false, nil
     S.exact, S.box, S.naming, S.phrases, S.aDown = false, nil, nil, false, false
-    S.phraseSave, S.phraseNoText, S.forget = false, false, nil
+    S.phraseSave, S.phraseNoText, S.phraseSend, S.forget = false, false, false, nil
     StopSlotHold()
     for _, st in pairs(sticks) do st.out, st.held, st.waiting, st.lastDir = false, false, nil, nil end
 end
@@ -964,7 +964,9 @@ local function Unpress(button)
         if S.aTimer then S.aTimer:Cancel() end
         S.aDown, S.aTimer = false, nil
         if S.phrases then
-            S.phrases, S.phraseSave, S.phraseNoText = false, false, false
+            local send = S.phraseSend and box and Message() ~= ""
+            S.phrases, S.phraseSave, S.phraseNoText, S.phraseSend = false, false, false, false
+            if send then return Send() end
             if box then Paint() end
         elseif tapped and box then
             Send()
@@ -1077,7 +1079,7 @@ local function Hint()
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
         if S.phraseNoText then return L["PHRASE_NEED_TEXT"]:format(Glyph("PAD1"), Glyph("PAD3")) end
-        return L["HINT_PHRASES"]:format(Glyph("PAD3"), Glyph("PAD1"))
+        return L[ns.db.phraseFill and "HINT_PHRASES_FILL" or "HINT_PHRASES"]:format(Glyph("PAD3"), Glyph("PAD1"))
     end
     if S.naming then
         if S.naming.flicks ~= "" and #S.naming.found == 0 then return L["NAMING_NONE"] end
@@ -1717,7 +1719,7 @@ local function Open(edit)
     D.Refresh(S.names)
     local text = edit:GetText()
     S.lesson = not ns.db.lessonDone and { at = 1, peaks = {} } or nil
-    local back = draft and edit.chatFrame and text == "" and not S.lesson
+    local back = draft and edit.chatFrame and text == "" and not S.lesson and not ns.dev
     if back then text = draft end
     draft = nil
     Reset(text)

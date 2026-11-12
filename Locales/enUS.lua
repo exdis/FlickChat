@@ -45,6 +45,8 @@ ns.EN = {
     CLOSE = "Close",
     HINT_EXACT = "Exact letters: flick to a box, then flick toward its letter.",
     HINT_EXACT_PICK = "Now flick toward the letter.",
+    HINT_PHRASES_FILL = "Flick toward a phrase, or several: they join your message. %s saves what you typed as a phrase. Let go of %s to go back.",
+    OPT_PHRASE_SEND = "Quick phrases on an empty line send themselves",
     DRAFT_BACK = "Your unsent message is back. %s clears it.",
     FORGET_ASK = "Forget \"%s\"? It will not be suggested again. %s forgets it, any other button keeps it.",
     FORGOT = "forgot \"%s\". Spell it in exact letters to have it back.",
@@ -68,8 +70,8 @@ ns.EN = {
     SEND_PHRASES = "Send (hold: phrases)",
     PHRASES = "hi|ty|np|brb|ready?|one sec|omw|inv pls",
     PROBE_STICKS = "recording stick movement for 40 seconds (numbers only, no text). /reload afterwards saves it.",
-    HINT_PHRASES = "Flick toward a phrase: on an empty line it sends at once, otherwise it joins your message. %s"
-        .. " saves what you typed as a phrase. Let go of %s to go back.",
+    HINT_PHRASES = "Flick toward a phrase, or several. On an empty line they send when you let go; otherwise they"
+        .. " join your message. %s saves what you typed as a phrase. Let go of %s to go back.",
     HINT_PHRASE_SAVE = "Flick toward the box this message should go in: it replaces that phrase. %s or letting go"
         .. " of %s cancels.",
     PHRASE_NEED_TEXT = "Type a message first, then hold %s and press %s to save it as a phrase.",
