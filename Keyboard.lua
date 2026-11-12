@@ -1401,6 +1401,26 @@ Paint = function()
     end
     -- Under the window, and gone with the hints the player hid; the lesson's lines always show.
     kb.hint:SetText(text ~= "" and (S.lesson or S.forget or S.move or not ns.db.guideOff or S.symbols and (ns.db.uses.pick or 0) < PICK_TIP_USES) and text or nil)
+    -- The lesson's lines stand over the keyboard on a dark strip (chat sits low on most screens), clear of the
+    -- guide and the reminders there; with the keyboard high on the screen they stay under it.
+    local lift = false
+    if S.lesson and (kb:GetTop() or 0) * kb:GetEffectiveScale() < UIParent:GetHeight() * UIParent:GetEffectiveScale() * 0.7 then
+        lift = 14
+        if kb.toggle.over == kb.guide then lift = lift + kb.guide:GetHeight() + 4 end
+        if not ns.db.stickTipsOff then lift = lift + TOGGLE_GAP + 18 end
+    end
+    if kb.hintLift ~= lift then
+        kb.hintLift = lift
+        kb.hint:ClearAllPoints()
+        if lift then
+            kb.hint:SetPoint("BOTTOMLEFT", kb, "TOPLEFT", 14, lift)
+            kb.hint:SetPoint("BOTTOMRIGHT", kb, "TOPRIGHT", -14, lift)
+        else
+            kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -4)
+            kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
+        end
+    end
+    kb.hintBack:SetShown(lift ~= false and kb.hint:GetText() ~= nil)
     Layout()
 end
 
@@ -1563,6 +1583,7 @@ function ns.Restyle()
     kb.hint:ClearAllPoints()
     kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -4)
     kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
+    kb.hintLift = false
     if box then Paint() end
 end
 
@@ -1686,6 +1707,12 @@ local function Build()
     end
     kb.hint = kb:CreateFontString(nil, "ARTWORK")
     kb.hint:SetTextColor(1, 0.82, 0)
+    -- behind the lesson's lines when they stand over the keyboard
+    kb.hintBack = kb:CreateTexture(nil, "BACKGROUND")
+    kb.hintBack:SetColorTexture(0, 0, 0, 0.78)
+    kb.hintBack:SetPoint("TOPLEFT", kb.hint, "TOPLEFT", -8, 7)
+    kb.hintBack:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 8, -7)
+    kb.hintBack:Hide()
     kb.bar = CreateFrame("Frame", nil, kb)
     kb.bar:SetClampedToScreen(true)
     local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
