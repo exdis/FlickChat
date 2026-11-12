@@ -93,9 +93,9 @@ function ns.Forget(word)
 end
 
 -- The keyboard's place and size: set with the sticks the next time it opens.
-function ns.MoveNext()
+function ns.MoveNext(button)
     ns.moveNext = true
-    ns.Tell(ns.L["MOVE_NEXT"])
+    ns.Tell(ns.L["MOVE_NEXT"], button)
 end
 
 function ns.ForgottenBack()
@@ -125,12 +125,12 @@ end
 
 function ns.Say(text) print("|cffffd100" .. ns.L["TITLE"] .. "|r " .. text) end
 
--- What a settings button set going, in a dialog with an Okay: a chat line there is missed behind the window.
-function ns.Tell(text)
-    if not StaticPopup_Show then return ns.Say(text) end
-    StaticPopupDialogs.FLICKCHAT_TELL = StaticPopupDialogs.FLICKCHAT_TELL
-        or { text = "%s", button1 = OKAY, timeout = 0, whileDead = true, hideOnEscape = true }
-    StaticPopup_Show("FLICKCHAT_TELL", (text:gsub("^%l", string.upper)))
+-- What a settings button set going: a chat line, and the pressed button's own text says it where the player is
+-- looking. Never a dialog: a StaticPopup shown by addon code over the Settings window leaves the game's
+-- controller bindings tainted, and closing the window is then refused.
+function ns.Tell(text, button)
+    ns.Say(text)
+    if button and button.SetText then button:SetText(ns.L["OPT_ARMED"]) end
 end
 
 -- Quick phrases by slot (1-4 the left stick's up, right, down, left; 5-8 the right's): the player's own, else the
@@ -303,10 +303,10 @@ function ns.BuildOptions()
     SizeRow(category, "size", L["OPT_SIZE"], 70, 200)
     SizeRow(category, "wordRoom", L["OPT_WORD_ROOM"], 70, 160)
     SizeRow(category, "wheelSize", L["OPT_WHEEL_SIZE"], 50, 150)
-    Button(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function() ns.MoveNext() end, L["OPT_MOVE_TIP"])
+    Button(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function(button) ns.MoveNext(button) end, L["OPT_MOVE_TIP"])
     Head(L["OPT_HEAD_PRACTICE"])
-    Button(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function() ns.PracticeNext() end, L["OPT_PRACTICE_TIP"])
-    Button(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function() ns.RunLessonAgain() end)
+    Button(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function(button) ns.PracticeNext(button) end, L["OPT_PRACTICE_TIP"])
+    Button(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function(button) ns.RunLessonAgain(button) end)
     Head(L["OPT_HEAD_WORDS"])
     Button(L["OPT_WORDS"], ns.MyWordsText, function(button) EditPhrase(button, "words") end, L["OPT_WORDS_TIP"])
     Button(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function() ns.ForgottenBack() end, L["OPT_FORGOT_TIP"])
@@ -387,9 +387,9 @@ function ns.NextChatKey()
 end
 
 -- The first-time typing lesson comes back the next time the keyboard opens.
-function ns.RunLessonAgain()
+function ns.RunLessonAgain(button)
     ns.db.lessonDone = false
-    ns.Tell(ns.L["LESSON_AGAIN"])
+    ns.Tell(ns.L["LESSON_AGAIN"], button)
 end
 
 -- Where the settings are, in a chat line. The game's Settings window opened by addon code is ours from then on:

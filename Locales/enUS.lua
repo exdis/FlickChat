@@ -69,6 +69,7 @@ ns.EN = {
     OPT_HEAD_PRACTICE = "Practice",
     OPT_HEAD_SIZE = "Size and place",
     OPT_HEAD_OPTIONS = "Options",
+    OPT_ARMED = "Ready: now open chat",
     OPT_PRACTICE = "Typing practice",
     PRACTICE_AGAIN = "Again",
     PRACTICE_NEXT = "open chat: typing practice starts there. Nothing you type in it is sent.",
