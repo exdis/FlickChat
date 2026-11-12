@@ -98,7 +98,7 @@ end
 local function Cap(word)
     if S.capsLock then return word:upper() end
     -- Always lowercase: the player's setting, or a dev run's.
-    local lowercase = ns.db.lowercase or (ns.dev and ns.dev.lowercase)
+    local lowercase = ns.db.lowercase or (ns.dev and ns.dev.lowercase) or ns.practice ~= nil
     if lowercase then word = word:lower() end
     if S.caps or (not lowercase and EndsSentence(S.committed)) then return (word:gsub("^%l", string.upper)) end
     return word
@@ -213,6 +213,11 @@ local function Commit(word, space)
     S.committed = before .. Lead() .. Cap(word) .. (space and " " or "")
     S.undo = { committed = before, flicks = S.flicks, literal = S.literal, shown = S.shown, after = S.committed }
     S.flicks, S.literal, S.caps, S.autoSpace = "", nil, false, space
+    -- Practice takes each kept word and the line starts empty again.
+    if ns.practice then
+        ns.practice.Typed(word)
+        S.committed, S.undo, S.autoSpace = "", nil, false
+    end
     LessonStep(word)
 end
 
@@ -350,6 +355,7 @@ end
 local function Emit(digit)
     Sync()
     S.forget, S.draftBack = nil, nil
+    if ns.practice then ns.practice.Flick() end
     if S.aDown and not S.phrases then OpenPhrases() end
     if S.phrases then
         if S.phraseSave then return SavePhrase(digit) end
@@ -705,6 +711,7 @@ local function Reset(text)
 end
 
 Send = function()
+    if ns.practice then return ns.practice.Again() end
     if S.lesson then
         local last = S.lesson.at == #LESSON and (Word() or ""):lower() == LESSON[#LESSON]
         if last or S.lesson.at > #LESSON then
@@ -760,7 +767,11 @@ local function Close()
         return Paint()
     end
     -- B leaves chat and keeps the message for the next time it opens; View is what empties a line.
-    if box.chatFrame and not S.lesson and S.written:find("%S") then draft = S.written end
+    if ns.practice then
+        ns.practice.Stop()
+    elseif box.chatFrame and not S.lesson and S.written:find("%S") then
+        draft = S.written
+    end
     -- In a fight the game refuses a chat box's focus dropped by addon code (its controller state stays on chat):
     -- the keyboard steps back and the pad is the game's again, whose own Back shuts chat.
     if box.chatFrame and InCombatLockdown() then return ns.Shut() end
@@ -1117,7 +1128,7 @@ end
 local function LessonText()
     local lesson = S.lesson
     local target = LESSON[lesson.at]
-    lesson.next = nil
+    lesson.next, lesson.slot = nil, nil
     if not target then return L["LESSON_SEND"]:format(LESSON[#LESSON], Glyph("PAD1")) end
     if target == "?" then
         if not S.symbols then return L["LESSON_PUNCT"]:format(Glyph("PAD3")) end
@@ -1143,12 +1154,13 @@ local function LessonText()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n\n" or ""
     -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
-    -- teach. On the first line it takes a flick first; from the second a guessed next word counts too.
+    -- teach. A next word guessed before any flick counts too (the last word, sent with A, is always flicked).
     if #S.flicks < #key then
         for slot = 1, #SLOT_KEYS do
             if (S.slots[slot] or ""):lower() == target
-                and (#S.flicks > 0 or (lesson.at > 4 and lesson.at < #LESSON)) then
+                and (#S.flicks > 0 or lesson.at < #LESSON) then
                 local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
+                lesson.slot = slot
                 return intro .. L[line]:format(target, L["DIR_" .. SLOT_DIR[slot]])
             end
         end
@@ -1160,12 +1172,14 @@ local function LessonText()
         local i = #S.flicks + 1
         local digit = tonumber(key:sub(i, i))
         lesson.next = digit
-        local line = L["LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
+        local opens = lesson.at == 1 or LESSON_LINE_END[lesson.at - 1]
+        -- A word's first flick names the word (the line's first word, or the next); its later ones carry on.
+        local line = L[i > 1 and "LESSON_FLICK_ON" or opens and "LESSON_FLICK_FIRST" or "LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
             L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
         if shown ~= target:sub(1, #S.flicks) then
-            return L["LESSON_GUESSING"]:format(Word(), Groups()[tonumber(key:sub(i - 1, i - 1))]) .. "\n" .. line
+            return L["LESSON_GUESSING"]:format(Word(), Groups()[tonumber(key:sub(i - 1, i - 1))]) .. "\n\n" .. line
         end
         return line
     end
@@ -1175,19 +1189,7 @@ end
 
 -- The line over the legend: what to do right now.
 local function Hint()
-    if S.lesson then
-        -- On top the goal: the whole line being typed, white, its finished words greyed; then the step.
-        local at, first, words = S.lesson.at, 1, {}
-        for i = 1, #LESSON do
-            if LESSON_LINE_END[i] and i < at then first = i + 1 end
-        end
-        for i = first, #LESSON do
-            local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. LESSON[i] .. "|r"
-            if LESSON[i] == "?" and #words > 0 then words[#words] = words[#words] .. word else words[#words + 1] = word end
-            if LESSON_LINE_END[i] then break end
-        end
-        return L["LESSON_GOAL"]:format(table.concat(words, " ")) .. "\n\n" .. LessonText()
-    end
+    if S.lesson then return LessonText() end
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
@@ -1245,6 +1247,7 @@ local function Labels()
     if S.move then
         labels.PAD1, labels.PAD2, labels.PAD4, labels.PAD3 = L["SAVE"], L["CANCEL"], L["MOVE_RESET"], ""
     end
+    if ns.practice then labels.PAD1 = L["PRACTICE_AGAIN"] end
     return labels
 end
 
@@ -1402,6 +1405,27 @@ Paint = function()
         end
         local color = lit and YELLOW or IDLE
         if S.forget and word and word:lower() == S.forget:lower() then color = FORGET_COLOR end
+        -- The lesson's "it is over the d-pad": that word beats, so the eye finds it.
+        local beat = S.lesson ~= nil and S.lesson.slot == i
+        if beat then color = YELLOW end
+        if beat ~= (slot.beating or false) then
+            slot.beating = beat
+            if beat and not slot.beat then
+                slot.beat = slot:CreateAnimationGroup()
+                slot.beat:SetLooping("BOUNCE")
+                local fade = slot.beat:CreateAnimation("Alpha")
+                fade:SetFromAlpha(1)
+                fade:SetToAlpha(0.25)
+                fade:SetDuration(0.45)
+                fade:SetSmoothing("IN_OUT")
+            end
+            if beat then
+                slot.beat:Play()
+            elseif slot.beat then
+                slot.beat:Stop()
+                slot:SetAlpha(1)
+            end
+        end
         slot:SetTextColor(color[1], color[2], color[3])
         kb.marks[i]:SetAlpha(word and 1 or 0.35)
     end
@@ -1442,6 +1466,26 @@ Paint = function()
         kb.skipSize = size
     end
     kb.hintSkip:SetText(S.lesson and (Glyph("PAD4") .. " " .. L["LESSON_SKIP"]) or "")
+    -- Over the step, centred, the goal: the whole line being typed, white, its finished words greyed.
+    local goal = ""
+    if S.lesson then
+        local at, first, words = S.lesson.at, 1, {}
+        for i = 1, #LESSON do
+            if LESSON_LINE_END[i] and i < at then first = i + 1 end
+        end
+        for i = first, #LESSON do
+            local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. LESSON[i] .. "|r"
+            if LESSON[i] == "?" and #words > 0 then words[#words] = words[#words] .. word else words[#words + 1] = word end
+            if LESSON_LINE_END[i] then break end
+        end
+        goal = L["LESSON_GOAL"]:format(table.concat(words, " "))
+        if kb.goalSize ~= size then
+            kb.hintGoal:SetFont(STANDARD_TEXT_FONT, size + 2, "OUTLINE")
+            kb.goalSize = size
+        end
+    end
+    kb.hintGoal:SetText(goal)
+    kb.hintBack:SetPoint("TOPLEFT", kb.hint, "TOPLEFT", -8, 7 + (goal ~= "" and size + 14 or 0))
     Layout()
 end
 
@@ -1738,6 +1782,9 @@ local function Build()
     kb.hintSkip = kb:CreateFontString(nil, "ARTWORK")
     kb.hintSkip:SetTextColor(0.82, 0.82, 0.82)
     kb.hintSkip:SetPoint("TOPRIGHT", kb.hint, "BOTTOMRIGHT", 0, -8)
+    kb.hintGoal = kb:CreateFontString(nil, "ARTWORK")
+    kb.hintGoal:SetTextColor(1, 0.82, 0)
+    kb.hintGoal:SetPoint("BOTTOM", kb.hint, "TOP", 0, 10)
     kb.bar = CreateFrame("Frame", nil, kb)
     kb.bar:SetClampedToScreen(true)
     local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
@@ -1897,7 +1944,7 @@ local function Open(edit)
     D.Refresh(S.names)
     local text = edit:GetText()
     S.lesson = not ns.db.lessonDone and { at = 1, peaks = {} } or nil
-    local back = draft and edit.chatFrame and text == "" and not S.lesson and not ns.dev
+    local back = draft and edit.chatFrame and text == "" and not S.lesson and not ns.dev and not ns.practiceNext
     if back then text, draft = draft, nil end
     Reset(text)
     S.draftBack = back or nil
@@ -1924,10 +1971,15 @@ local function Open(edit)
         ns.moveNext = nil
         Move.Start()
     end
+    if ns.practiceNext and edit.chatFrame and not S.lesson then
+        ns.practiceNext = nil
+        ns.StartPractice(edit)
+    end
     if ns.dev and ns.dev.Opened then ns.dev.Opened() end
 end
 
 function ns.Shut()
+    if ns.practice then ns.practice.Stop() end
     if kb then kb:Hide() end
 end
 

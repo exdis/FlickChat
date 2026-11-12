@@ -16,3 +16,4 @@ Locales\frFR.lua
 Locales\itIT.lua
 Words.lua
 Keyboard.lua
+Practice.lua

@@ -290,6 +290,9 @@ function ns.BuildOptions()
     layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function()
         ns.MoveNext()
     end, L["OPT_MOVE_TIP"], true))
+    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function()
+        ns.PracticeNext()
+    end, L["OPT_PRACTICE_TIP"], true))
     layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function()
         ns.RunLessonAgain()
     end, nil, true))
@@ -592,6 +595,8 @@ SlashCmdList.FLICKCHAT = function(msg)
         ns.RunLessonAgain()
     elseif cmd == "move" then
         ns.MoveNext()
+    elseif cmd == "practice" then
+        ns.PracticeNext()
     elseif cmd == "new" then
         -- What a new player on the Classic chat style meets at login, whatever the style is now.
         ns.StyleNotice()

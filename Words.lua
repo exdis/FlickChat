@@ -310,6 +310,13 @@ function D.Known(low) return idOf[low] ~= nil or RareForm(low) ~= nil end
 
 function D.Built() return #words > 0 end
 
+-- The i-th commonest word when it is one for typing practice: plain lowercase letters, two or more, never one
+-- the mature filter holds.
+function D.PracticeWord(i)
+    local word = words[i]
+    if word and word == lows[i] and #word >= 2 and not find(word, "[^a-z]") and not mature[word] then return word end
+end
+
 -- The player's counts and the words outside the list: names (name -> chance) and the player's own new words.
 function D.Refresh(names)
     local db = ns.db
