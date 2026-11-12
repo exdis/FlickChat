@@ -1,11 +1,12 @@
 ## Interface: 16001, 120100, 120105, 120107
 ## Title: FlickChat
-## Notes: Fast controller chat: swipe and flick the sticks to type whole words, one flick per letter.
+## Notes: A controller keyboard for chat: flick the sticks toward each letter and it works out the word.
 ## Author: fallenguard
-## Version: 1.0.0
+## Version: 1.1.0
 ## IconTexture: Interface\AddOns\FlickChat\media\icon
 ## Category: Chat
 ## SavedVariables: FlickChatDB
+## X-Curse-Project-ID: 1800196
 ## DefaultState: enabled
 
 Core.lua
