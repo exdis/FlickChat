@@ -420,9 +420,9 @@ function ns.StyleNotice()
             local atlas, file = text:match("|A:([^:|]+)"), text:match("|T([^:|]+)")
             if atlas then
                 local big = atlas:gsub("_%d+$", "_64")
-                return "|A:" .. (C_Texture.GetAtlasInfo(big) and big or atlas) .. ":26:26|a"
+                return "|A:" .. (C_Texture.GetAtlasInfo(big) and big or atlas) .. ":21:21|a"
             elseif file then
-                return "|T" .. file .. ":26:26|t"
+                return "|T" .. file .. ":21:21|t"
             end
             return text
         end
@@ -451,15 +451,16 @@ function ns.StyleNotice()
         local text = Line(title, 12)
         text:SetText(L["NOTICE_WELCOME"])
         -- The keyboard's size, the keyboard itself under the window as the preview: LB - + RB at the right.
-        local size = Line(text, 16, "GameFontNormal")
-        local larger = Text()
-        larger:SetPoint("RIGHT", notice, "RIGHT", -EDGE, 0)
-        larger:SetPoint("TOP", size, "TOP", 0, 1)
-        local function Step(name, label, by, anchor)
+        local size = Text("GameFontNormal")
+        size:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -18)
+        -- right after the sentence, on its middle line: LB, minus, plus, RB
+        local smaller = Text()
+        smaller:SetPoint("LEFT", size, "RIGHT", 14, 0)
+        local function Step(name, label, by, after)
             local button = CreateFrame("Button", name, notice, "UIPanelButtonTemplate")
             button:SetSize(26, 22)
             button:SetText(label)
-            button:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
+            button:SetPoint("LEFT", after, "RIGHT", 6, 0)
             button:SetScript("OnClick", function()
                 ns.db.size = math.max(70, math.min(200, (ns.db.size or 100) + by))
                 size:SetText(L["NOTICE_SIZE"]:format(ns.db.size))
@@ -467,11 +468,11 @@ function ns.StyleNotice()
             end)
             return button
         end
-        local plus = Step("FlickChatNoticeLarger", "+", 10, larger)
-        local minus = Step("FlickChatNoticeSmaller", "-", -10, plus)
-        local smaller = Text()
-        smaller:SetPoint("RIGHT", minus, "LEFT", -6, 0)
-        local note = Line(size, 10, "GameFontDisableSmall")
+        local minus = Step("FlickChatNoticeSmaller", "-", -10, smaller)
+        local plus = Step("FlickChatNoticeLarger", "+", 10, minus)
+        local larger = Text()
+        larger:SetPoint("LEFT", plus, "RIGHT", 6, 0)
+        local note = Line(size, 14, "GameFontDisableSmall")
         note:SetText(L["NOTICE_SIZE_NOTE"])
         -- The hide-line box, X at the end of its line.
         local check = CreateFrame("CheckButton", "FlickChatNoticeCheck", notice, "UICheckButtonTemplate")
@@ -499,7 +500,7 @@ function ns.StyleNotice()
         swap:Hide()
         swap:SetFrameStrata("FULLSCREEN_DIALOG")
         swap:SetFrameLevel(notice:GetFrameLevel() + 5)
-        swap:SetSize(280, 28)
+        swap:SetSize(310, 36)
         swap:RegisterForClicks("AnyUp", "AnyDown")
         swap:SetAttribute("type", "macro")
         swap:SetAttribute("macrotext", "/console chatStyle im")
@@ -524,9 +525,9 @@ function ns.StyleNotice()
                 warn:SetText(L["NOTICE_SWAPPED"])
                 warn:SetTextColor(0.4, 0.9, 0.4)
             end
-            local height = 22 + title:GetStringHeight() + 12 + text:GetStringHeight() + 16 + size:GetStringHeight() + 10
+            local height = 22 + title:GetStringHeight() + 12 + text:GetStringHeight() + 18 + size:GetStringHeight() + 14
                 + note:GetStringHeight() + 10 + 32 + math.max(0, label:GetStringHeight() - 18)
-            if section then height = height + 14 + 1 + 14 + warn:GetStringHeight() + (classic and 12 + 28 or 0) end
+            if section then height = height + 14 + 1 + 14 + warn:GetStringHeight() + (classic and 14 + 36 or 0) end
             notice:SetHeight(height + 22)
             return classic
         end
