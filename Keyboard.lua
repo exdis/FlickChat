@@ -204,6 +204,7 @@ local function LessonStep(done)
     if LESSON_LINE_END[lesson.at] then S.committed, S.autoSpace, S.undo = "", false, nil end
     -- Past the last word the lesson waits for the send (Send ends it).
     lesson.at, lesson.rolls = lesson.at + 1, 0
+    lesson.asked, lesson.missed, lesson.praise = nil, false, false
 end
 
 local function Commit(word, space)
@@ -371,6 +372,11 @@ local function Emit(digit)
     if S.exact then return ExactFlick(digit) end
     if S.literal then Commit(S.literal, true) end
     S.flicks = S.flicks .. digit
+    if S.lesson then
+        S.lesson.linked = S.lesson.linked or {}
+        S.lesson.linked[#S.flicks] = S.lesson.linkNext == true
+        S.lesson.linkNext = nil
+    end
     Use("flick")
     Flash(digit)
     Guess()
@@ -521,6 +527,7 @@ local function Roll(st, x, y, len)
         if probe then Note(string.format("roll %d -> %d", st.base + st.dir, st.base + dir)) end
         if S.lesson then S.lesson.rolls = (S.lesson.rolls or 0) + 1 end
         Release(st, now)
+        if S.lesson then S.lesson.linkNext = true end
         st.at, st.px, st.py, st.peak, st.held = now, x, y, len, false
         st.dir, st.settled = dir, Off(degrees, dir) <= SETTLED
     end
@@ -566,6 +573,47 @@ function LESSON.Drill(late)
     Show()
 end
 
+-- A chain the lesson asked for, judged as a stick comes back to rest: all of its letters, each after the first
+-- joined to the one before. Not so, its flicks come back out and it is asked again. A word that reached the
+-- d-pad meanwhile is the d-pad's to take: no judging then.
+function LESSON.Run(late)
+    local lesson = S.lesson
+    local asked, target = lesson.asked, LESSON[lesson.at]
+    if lesson.wait then
+        lesson.wait:Cancel()
+        lesson.wait = nil
+    end
+    local key, m = target and target:find("%a") and D.KeyOf(target), #S.flicks
+    if not key or m < asked.a - 1 then
+        lesson.asked = nil
+        return
+    end
+    if key:sub(1, m) ~= S.flicks or m < asked.a then return end
+    for slot = 1, #SLOT_KEYS do
+        if (S.slots[slot] or ""):lower() == target then
+            lesson.asked, lesson.missed = nil, false
+            return
+        end
+    end
+    -- A swing straight across passes through rest: a moment's wait for it.
+    local last, coming = tonumber(key:sub(m, m)), tonumber(key:sub(m + 1, m + 1))
+    if not late and m < asked.b and (last - coming) % 4 == 2 then
+        lesson.wait = C_Timer.NewTimer(0.4, function()
+            lesson.wait = nil
+            if S.lesson == lesson and lesson.asked == asked then LESSON.Run(true) end
+        end)
+        return
+    end
+    local good = m >= asked.b
+    for k = asked.a + 1, math.min(m, asked.b) do good = good and lesson.linked[k] end
+    lesson.asked, lesson.missed = nil, not good
+    if not good then
+        S.flicks, S.literal = key:sub(1, asked.a - 1), nil
+        Guess()
+        Show()
+    end
+end
+
 local function OnStick(_, which, x, y, len)
     local st = sticks[which]
     if not st or not box then return end
@@ -577,6 +625,8 @@ local function OnStick(_, which, x, y, len)
     local rolling = len >= RIM and not S.symbols and not S.phrases
     if not st.out then
         if len >= arm then
+            -- out again right after letting go: a swing straight across, one move with the flick before
+            if S.lesson and st.lastAt and GetTime() - st.lastAt < 0.4 then S.lesson.linkNext = true end
             st.out, st.at, st.px, st.py, st.peak, st.held = true, GetTime(), x, y, len, false
             st.dir, st.settled = nil, false
             -- A fast flick can reach the rim on its first reading: that is its direction.
@@ -587,7 +637,11 @@ local function OnStick(_, which, x, y, len)
     elseif len <= ns.db.rearm then
         st.out = false
         Release(st, GetTime())
-        if S.lesson and S.lesson.at == LESSON.roll and not S.lesson.chained then LESSON.Drill() end
+        if S.lesson and S.lesson.at == LESSON.roll and not S.lesson.chained then
+            LESSON.Drill()
+        elseif S.lesson and S.lesson.asked then
+            LESSON.Run()
+        end
         Paint()
     else
         local was = st.dir or Dir4(st.px, st.py)
@@ -1301,6 +1355,9 @@ local function LessonText()
             if #letters > 1 then
                 line = L["LESSON_CHAIN_RUN"]:format(target, table.concat(letters, ", "),
                     L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], table.concat(ways, ", "))
+                -- held to (LESSON.Run): the flicks from i to the run's last, in one move
+                lesson.asked = lesson.asked or { a = i, b = i + #letters - 1 }
+                if lesson.missed then line = L["LESSON_CHAIN_MISS"] .. "\n\n" .. line end
             end
         end
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
