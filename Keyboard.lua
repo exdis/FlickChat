@@ -1256,6 +1256,23 @@ local function LessonText()
         -- A word's first flick names the word (the line's first word, or the next); its later ones carry on.
         local line = L[i > 1 and "LESSON_FLICK_ON" or opens and "LESSON_FLICK_FIRST" or "LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
             L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
+        -- Once the drill is done, letters in a row on one stick are asked for as one move (never the same box
+        -- twice running: that takes a return to rest).
+        if lesson.at > LESSON.roll then
+            local letters, ways, j = {}, {}, i
+            while j <= #key do
+                local d, before = tonumber(key:sub(j, j)), j > i and tonumber(key:sub(j - 1, j - 1))
+                if (d <= 4) ~= (digit <= 4) or before == d then break end
+                local way = L["DIR_" .. ((d - 1) % 4 + 1)]
+                letters[#letters + 1] = target:sub(j, j)
+                ways[#ways + 1] = before and (before - d) % 4 == 2 and L["LESSON_ACROSS"]:format(way) or way
+                j = j + 1
+            end
+            if #letters > 1 then
+                line = L["LESSON_CHAIN_RUN"]:format(target, table.concat(letters, ", "),
+                    L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], table.concat(ways, ", "))
+            end
+        end
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
         if shown ~= target:sub(1, #S.flicks) then

@@ -91,7 +91,7 @@ ns.EN = {
     LESSON_DONE = "lesson done. Every button is named at the bottom of the panel. /flick lesson runs it again.",
     NO_WORD = "No word starts with these flicks, so the box shows each box's first letter. LT takes the last flick"
         .. " back; LB types exact letters.",
-    HINT_NEXT = "Flick the box that holds your word's next letter. You never pick the letter itself: the keyboard works out the word. The d-pad takes a word shown above.",
+    HINT_NEXT = "Flick the box that holds your word's next letter: the keyboard works out the word. The d-pad takes a word shown above.",
     HINT_MISSING = "No word fits these flicks exactly. Still typing? Keep flicking. Word done but not shown? LB"
         .. " spells it letter by letter, and it is remembered after.",
     LOWER_ON = "always lowercase: on. Pressing the left stick still capitalizes a word. /flick lowercase turns it"
@@ -164,6 +164,8 @@ ns.EN = {
     LESSON_SYMBOL_HOLD = "%s is not the first symbol in the %s box, so a flick will not type it. Hold the %s %s on that box, flick the %s %s for %s, then let go.",
     LESSON_SYMBOL_FLICK = "Flick the %s %s for %s: a flick types the first symbol of a box.",
     LESSON_SYMBOLS = "Now \"%s\": %s turns the boxes into symbols.",
+    LESSON_ACROSS = "straight across to %s",
+    LESSON_CHAIN_RUN = "\"%s\": %s are on the %s. Chain them in one move: %s.",
     LESSON_GOAL = "Type \"%s\"",
     LESSON_LINE2 = "Second line. Take each word off the d-pad as soon as it shows.",
     LESSON_DPAD_FIRST = "\"%s\" is already over the d-pad: press the d-pad %s to take it. You rarely have to flick a whole word, so watch those four words as you go.",
