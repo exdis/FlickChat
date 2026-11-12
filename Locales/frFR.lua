@@ -173,6 +173,7 @@ L["LESSON_SYMBOL_FLICK"] = "Poussez le %s vers %s pour %s : un geste écrit le p
 L["LESSON_SYMBOLS"] = "Maintenant « %s » : %s change les cases en symboles."
 L["LESSON_ACROSS"] = "tout droit vers %s"
 L["LESSON_CHAIN_RUN"] = "« %s » : %s sont sur le %s. Enchaînez-les en un seul mouvement : %s."
+L["LESSON_FIX"] = "La ligne de discussion contient « %s », qui n'est pas dans la phrase. Cela arrive, et c'est vite corrigé : %s annule une étape à la fois et, maintenu, efface des mots entiers. Retirez « %s », puis continuez."
 L["LESSON_GOAL"] = "Tapez « %s »"
 L["LESSON_LINE2"] = "Deuxième ligne. Prenez chaque mot sur la croix dès qu'il apparaît."
 L["LESSON_DPAD_FIRST"] = "\"%s\" est déjà au-dessus de la croix : appuyez sur la croix %s pour le prendre. Il faut rarement écrire un mot entier : gardez un œil sur ces quatre mots."

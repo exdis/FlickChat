@@ -1171,11 +1171,41 @@ local function PaintRose(rose, st)
     end
 end
 
+-- The chat box against the lesson's line. What is kept there should be the line's words up to the one being
+-- typed: a word of the line missing again puts the lesson back on it; anything else is returned as the text to
+-- take back (nil when all is well).
+function LESSON.Check()
+    local lesson = S.lesson
+    local first = 1
+    for i = 1, #LESSON do
+        if LESSON_LINE_END[i] and i < lesson.at then first = i + 1 end
+    end
+    local function Plain(text) return (text:lower():gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
+    local have = Plain(S.committed)
+    -- the line as it stands after each of its steps
+    local text, fits = "", first
+    if have == "" then return end
+    for i = first, math.min(lesson.at - 1, #LESSON) do
+        local entry = LESSON[i]
+        local joins = entry == "?" or (i > first and not entry:find("%a") and not LESSON[i - 1]:find("%a"))
+        text = text .. ((text == "" or joins) and "" or " ") .. entry
+        if have == text then
+            if i < lesson.at - 1 then lesson.at, lesson.stage, lesson.chained = i + 1, nil, nil end
+            return
+        end
+        if have:sub(1, #text + 1) == text .. " " then fits = #text + 2 end
+    end
+    return Plain(S.committed):sub(fits == first and 1 or fits)
+end
+
 -- The lesson's line for where the player is now, and the box to light (lesson.next).
 local function LessonText()
     local lesson = S.lesson
-    local target = LESSON[lesson.at]
     lesson.next, lesson.slot = nil, nil
+    -- Something in the chat box that is not in the line: how to take it back comes before anything else.
+    local wrong = LESSON.Check()
+    if wrong then return L["LESSON_FIX"]:format(wrong, Glyph("PADLTRIGGER"), wrong) end
+    local target = LESSON[lesson.at]
     if not target then return L["LESSON_SEND"]:format(LESSON.last, Glyph("PAD1")) end
     -- A symbol: the page first; then a flick for a box's first symbol, the hold and pick for any other.
     if not target:find("%a") then

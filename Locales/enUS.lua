@@ -166,6 +166,7 @@ ns.EN = {
     LESSON_SYMBOLS = "Now \"%s\": %s turns the boxes into symbols.",
     LESSON_ACROSS = "straight across to %s",
     LESSON_CHAIN_RUN = "\"%s\": %s are on the %s. Chain them in one move: %s.",
+    LESSON_FIX = "The chat box has \"%s\", which is not in the line. This happens, and it is quick to undo: %s takes back one step at a time, and held it erases whole words. Take \"%s\" out, then carry on.",
     LESSON_GOAL = "Type \"%s\"",
     LESSON_LINE2 = "Second line. Take each word off the d-pad as soon as it shows.",
     LESSON_DPAD_FIRST = "\"%s\" is already over the d-pad: press the d-pad %s to take it. You rarely have to flick a whole word, so watch those four words as you go.",

@@ -170,6 +170,7 @@ L["LESSON_SYMBOL_FLICK"] = "Mueve el %s hacia %s para %s: un movimiento escribe 
 L["LESSON_SYMBOLS"] = "Ahora \"%s\": %s convierte las casillas en símbolos."
 L["LESSON_ACROSS"] = "recto hacia %s"
 L["LESSON_CHAIN_RUN"] = "\"%s\": %s están en el %s. Encadénalas en un solo gesto: %s."
+L["LESSON_FIX"] = "La línea de chat tiene \"%s\", que no está en la frase. Pasa, y se arregla rápido: %s deshace un paso cada vez y, mantenido, borra palabras enteras. Quita \"%s\" y sigue."
 L["LESSON_GOAL"] = "Escribe \"%s\""
 L["LESSON_LINE2"] = "Segunda línea. Toma cada palabra de la cruceta en cuanto aparezca."
 L["LESSON_DPAD_FIRST"] = "\"%s\" ya está sobre la cruceta: pulsa la cruceta %s para tomarla. Rara vez hay que escribir una palabra entera: vigila esas cuatro palabras."

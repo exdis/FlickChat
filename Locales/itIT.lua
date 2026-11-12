@@ -171,6 +171,7 @@ L["LESSON_SYMBOL_FLICK"] = "Spingi lo %s verso %s per %s: un movimento scrive il
 L["LESSON_SYMBOLS"] = "Ora \"%s\": %s trasforma le caselle in simboli."
 L["LESSON_ACROSS"] = "dritto verso %s"
 L["LESSON_CHAIN_RUN"] = "\"%s\": %s sono sullo %s. Concatenale in un solo gesto: %s."
+L["LESSON_FIX"] = "Nella riga della chat c'è \"%s\", che non fa parte della frase. Succede, e si rimedia in fretta: %s annulla un passo alla volta e, tenuto premuto, cancella parole intere. Togli \"%s\" e continua."
 L["LESSON_GOAL"] = "Scrivi \"%s\""
 L["LESSON_LINE2"] = "Seconda riga. Prendi ogni parola dalla croce appena compare."
 L["LESSON_DPAD_FIRST"] = "\"%s\" è già sopra la croce: premi la croce %s per prenderla. Raramente serve scrivere una parola intera: tieni d'occhio quelle quattro parole."

@@ -174,6 +174,7 @@ L["LESSON_SYMBOL_FLICK"] = "Schnippe den %s nach %s für %s: ein Schnipser schre
 L["LESSON_SYMBOLS"] = "Jetzt \"%s\": %s macht aus den Feldern Symbole."
 L["LESSON_ACROSS"] = "gerade hinüber nach %s"
 L["LESSON_CHAIN_RUN"] = "\"%s\": %s liegen auf dem %s. Verkette sie in einer Bewegung: %s."
+L["LESSON_FIX"] = "In der Chatzeile steht \"%s\", das gehört nicht zur Zeile. Das passiert und ist schnell behoben: %s nimmt Schritt für Schritt zurück, gehalten löscht es ganze Wörter. Entferne \"%s\" und mach dann weiter."
 L["LESSON_GOAL"] = "Tippe \"%s\""
 L["LESSON_LINE2"] = "Zweite Zeile. Nimm jedes Wort vom Steuerkreuz, sobald es erscheint."
 L["LESSON_DPAD_FIRST"] = "\"%s\" steht schon über dem Steuerkreuz: Steuerkreuz %s drücken, um es zu nehmen. Ein ganzes Wort musst du selten schnippen: behalte diese vier Wörter im Blick."
