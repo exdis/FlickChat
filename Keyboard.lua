@@ -935,7 +935,7 @@ end
 local function CloseWheel()
     S.wheel = nil
     if wheel then wheel:Hide() end
-    if box then Paint() end
+    if box or S.preview then Paint() end
 end
 
 WheelStick = function(which, x, y)
@@ -1089,7 +1089,7 @@ local function Unpress(button)
             local send = S.phraseSend and box and Message() ~= ""
             S.phrases, S.phraseSave, S.phraseNoText, S.phraseSend = false, false, false, false
             if send then return Send() end
-            if box then Paint() end
+            if box or S.preview then Paint() end
         elseif tapped and box then
             Send()
         end
@@ -1379,9 +1379,10 @@ end
 local function PaintPrompts()
     -- R3 hides the hints picked on the settings page: both (the default), the bar or the guide alone.
     local reach = ns.db.hintsToggle or "both"
-    kb.guide:SetShown(not (ns.db.guideOff and (reach == "both" or reach == "guide")))
+    kb.guide:SetShown(not S.preview and not (ns.db.guideOff and (reach == "both" or reach == "guide")))
     -- Under a settings box the bar always shows: it is the only word on how to save or leave.
-    kb.bar:SetShown((box ~= nil and not box.chatFrame) or not (ns.db.guideOff and (reach == "both" or reach == "bar")))
+    kb.bar:SetShown(not S.preview
+        and ((box ~= nil and not box.chatFrame) or not (ns.db.guideOff and (reach == "both" or reach == "bar"))))
     local toggle = kb.toggle
     SetIcon(toggle, "PADRSTICK")
     local text = L[ns.db.guideOff and "HINTS_SHOW" or "HINTS_HIDE"]
@@ -1429,7 +1430,7 @@ local function Layout()
 end
 
 Paint = function()
-    if not kb or not box then return end
+    if not kb or not (box or S.preview) then return end
     local text = Hint()
     PaintRose(kb.roses[1], sticks.Left)
     PaintRose(kb.roses[2], sticks.Right)
@@ -1701,7 +1702,7 @@ function ns.Restyle()
     kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -4)
     kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
     kb.hintLift = false
-    if box then Paint() end
+    if box or S.preview then Paint() end
 end
 
 function ns.Relayout()
@@ -1874,8 +1875,8 @@ local function Build()
     -- The controller is the keyboard's while it shows: no walking, jumping or casting under the typing.
     kb:SetScript("OnShow", function(self)
         if chatProbe then ChatNote("keyboard shown by " .. Caller()) end
-        self:EnableGamePadButton(not self.viewHold)
-        self:EnableGamePadStick(true)
+        self:EnableGamePadButton(not self.viewHold and not S.preview)
+        self:EnableGamePadStick(not S.preview)
     end)
     kb:SetScript("OnHide", function(self)
         if chatProbe then ChatNote("keyboard hidden by " .. Caller()) end
@@ -1989,6 +1990,7 @@ function ns.DevTools()
 end
 
 local function Open(edit)
+    S.preview = nil
     if not kb then Build() end
     D.Build()
     box = edit
@@ -2028,6 +2030,29 @@ local function Open(edit)
         ns.StartPractice(edit)
     end
     if ns.dev and ns.dev.Opened then ns.dev.Opened() end
+end
+
+-- The keyboard as a picture of itself under a window (the first-login notice's size picker): at the player's
+-- size, a few words over the d-pad, no pad input taken. Called again with nothing, it goes.
+function ns.PreviewKeyboard(under)
+    if not under then
+        if S.preview then
+            S.preview = nil
+            if kb and not box then kb:Hide() end
+        end
+        return
+    end
+    if box then return end
+    if not kb then Build() end
+    S.preview = true
+    Reset("")
+    S.slots = { "hello", "the", "you", "thanks" }
+    ns.Restyle()
+    kb:ClearAllPoints()
+    kb:SetPoint("TOP", under, "BOTTOM", 0, -44)
+    kb:SetFrameStrata("FULLSCREEN_DIALOG")
+    kb:Show()
+    Paint()
 end
 
 function ns.Shut()

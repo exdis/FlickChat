@@ -38,7 +38,10 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         -- The game's controller mode shows chat's typing line only with the IM chat style: a notice says so.
         db.imStyleTold = nil
-        if ns.NeedsIMStyle() then ns.StyleNotice() end
+        -- Every new player once, in the game's controller mode: the keyboard's size, and the chat style if it
+        -- is the one the keyboard cannot open in. That one is told at each login until it is changed.
+        local controller = InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()
+        if ns.NeedsIMStyle() or (controller and not db.welcomed) then ns.StyleNotice() end
         return
     end
     if event == "CHAT_MSG_WHISPER" then
@@ -394,20 +397,42 @@ function ns.StyleNotice()
         notice = CreateFrame("Frame", "FlickChatNotice", UIParent)
         notice:Hide()
         notice:SetFrameStrata("FULLSCREEN_DIALOG")
-        notice:SetSize(480, 10)
-        notice:SetPoint("CENTER", 0, 80)
+        notice:SetSize(500, 10)
+        notice:SetPoint("CENTER", 0, 150)
         notice:EnableMouse(true)
         ns.Dress(notice)
         local title = notice:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -22)
         title:SetText(C_AddOns.GetAddOnMetadata(addonName, "Title"))
-        local text = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        text:SetPoint("TOP", title, "BOTTOM", 0, -10)
-        text:SetPoint("LEFT", notice, "LEFT", 24, 0)
-        text:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
-        text:SetJustifyH("LEFT")
+        local function Line(above, gap, font)
+            local line = notice:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
+            line:SetPoint("TOP", above, "BOTTOM", 0, -gap)
+            line:SetPoint("LEFT", notice, "LEFT", 24, 0)
+            line:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
+            line:SetJustifyH("LEFT")
+            return line
+        end
+        local text = Line(title, 10)
+        -- The keyboard's size, the keyboard itself under the notice as the preview.
+        local size = Line(text, 14, "GameFontNormal")
+        local function Step(name, label, by, x)
+            local button = CreateFrame("Button", name, notice, "UIPanelButtonTemplate")
+            button:SetSize(26, 22)
+            button:SetText(label)
+            button:SetPoint("RIGHT", notice, "RIGHT", x, 0)
+            button:SetPoint("TOP", size, "TOP", 0, 5)
+            button:SetScript("OnClick", function()
+                ns.db.size = math.max(70, math.min(200, (ns.db.size or 100) + by))
+                size:SetText(L["NOTICE_SIZE"]:format(ns.db.size))
+                if ns.Restyle then ns.Restyle() end
+            end)
+        end
+        Step("FlickChatNoticeSmaller", "-", -10, -54)
+        Step("FlickChatNoticeLarger", "+", 10, -24)
+        local note = Line(size, 8, "GameFontDisableSmall")
+        note:SetText(L["NOTICE_SIZE_NOTE"])
         local check = CreateFrame("CheckButton", "FlickChatNoticeCheck", notice, "UICheckButtonTemplate")
-        check:SetPoint("TOPLEFT", text, "BOTTOMLEFT", -4, -10)
+        check:SetPoint("TOPLEFT", note, "BOTTOMLEFT", -4, -10)
         check:SetScript("OnClick", function(self)
             ROWS.hideLine[2](self:GetChecked() == true)
             self:SetChecked(ROWS.hideLine[1]())
@@ -418,18 +443,17 @@ function ns.StyleNotice()
         label:SetJustifyH("LEFT")
         label:SetText(L["OPT_HIDE_LINE"])
         local keys = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        keys:SetPoint("TOP", check, "BOTTOM", 0, -26)
+        keys:SetPoint("TOP", check, "BOTTOM", 0, -22)
         keys:SetPoint("LEFT", notice, "LEFT", 24, 0)
         keys:SetPoint("RIGHT", notice, "RIGHT", -24, 0)
         keys:SetJustifyH("CENTER")
         local okay = CreateFrame("Button", "FlickChatNoticeOkay", notice, "UIPanelButtonTemplate")
         okay:SetText(OKAY)
         okay:SetSize(110, 24)
-        okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 20)
         okay:SetScript("OnClick", function() notice:Hide() end)
-        -- The switch itself: the game's own console command, run by a secure button on the player's press, so
-        -- the change is the player's (a setting written by addon code is refused its chat changes). On UIParent:
-        -- under the notice it would make the notice a protected frame.
+        -- The switch to IM style: the game's own console command, run by a secure button on the player's press,
+        -- so the change is the player's (a setting written by addon code is refused its chat changes). On
+        -- UIParent: under the notice it would make the notice a protected frame.
         local swap = CreateFrame("Button", "FlickChatNoticeSwap", UIParent, "SecureActionButtonTemplate, UIPanelButtonTemplate")
         swap:Hide()
         swap:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -439,42 +463,67 @@ function ns.StyleNotice()
         swap:RegisterForClicks("AnyUp", "AnyDown")
         swap:SetAttribute("type", "macro")
         swap:SetAttribute("macrotext", "/console chatStyle im")
+        local function Glyph(key) return GetBindingText(key, 1) end
+        -- What the notice says for the chat style as it is now; whether the switch is offered.
         local function Tell()
-            local im = GetCVar("chatStyle") == "im"
-            text:SetText(L[im and "NOTICE_SWAPPED" or "NOTICE_STYLE"])
-            keys:SetText(im and L["NOTICE_KEYS_DONE"]:format(GetBindingText("PAD3", 1), GetBindingText("PAD2", 1))
-                or L["NOTICE_KEYS"]:format(GetBindingText("PAD1", 1), GetBindingText("PAD3", 1), GetBindingText("PAD2", 1)))
-            notice:SetHeight(22 + title:GetStringHeight() + 10 + text:GetStringHeight() + 10 + 32
-                + math.max(0, label:GetStringHeight() - 18) + 26 + keys:GetStringHeight() + 52)
+            local classic = GetCVar("chatStyle") ~= "im"
+            text:SetText(L[classic and "NOTICE_STYLE" or notice.switched and "NOTICE_SWAPPED" or "NOTICE_WELCOME"])
+            size:SetText(L["NOTICE_SIZE"]:format(ns.db.size or 100))
+            local parts = {}
+            if classic then parts[#parts + 1] = L["NOTICE_KEY_SWAP"]:format(Glyph("PAD1")) end
+            parts[#parts + 1] = L["NOTICE_KEY_SIZE"]:format(Glyph("PADLSHOULDER"), Glyph("PADRSHOULDER"))
+            parts[#parts + 1] = L["NOTICE_KEY_BOX"]:format(Glyph("PAD3"))
+            parts[#parts + 1] = L["NOTICE_KEY_CLOSE"]:format(Glyph("PAD2"))
+            keys:SetText(table.concat(parts, "   "))
+            okay:ClearAllPoints()
+            if classic then okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 20) else okay:SetPoint("BOTTOM", 0, 20) end
+            notice:SetHeight(22 + title:GetStringHeight() + 10 + text:GetStringHeight() + 14 + size:GetStringHeight()
+                + 8 + note:GetStringHeight() + 10 + 32 + math.max(0, label:GetStringHeight() - 18) + 22
+                + keys:GetStringHeight() + 56)
+            return classic
         end
-        swap:SetScript("PostClick", function() C_Timer.After(0.3, function() if notice:IsShown() then Tell() end end) end)
-        -- The pad presses the notice's own buttons: A the switch, X the box, B Okay. Bindings and the secure
-        -- button are a fight's to refuse: both wait one out.
-        local function Pad(on)
+        swap:SetScript("PostClick", function()
+            C_Timer.After(0.3, function()
+                if not notice:IsShown() then return end
+                notice.switched = GetCVar("chatStyle") == "im"
+                notice.Pad(true)
+            end)
+        end)
+        -- The pad presses the notice's own buttons: A the switch, the bumpers the size, X the box, B Okay.
+        -- Bindings and the secure button are a fight's to refuse: both wait one out.
+        function notice.Pad(on)
+            local classic = Tell()
             if InCombatLockdown() then
                 notice:RegisterEvent("PLAYER_REGEN_ENABLED")
-                swap:SetAlpha(on and 1 or 0)
+                swap:SetAlpha(on and classic and 1 or 0)
                 return
             end
             notice:UnregisterEvent("PLAYER_REGEN_ENABLED")
             swap:SetAlpha(1)
-            swap:SetShown(on)
+            swap:SetShown(on and classic)
             ClearOverrideBindings(notice)
             if on then
                 swap:ClearAllPoints()
                 swap:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 20)
-                SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap")
+                if classic then SetOverrideBindingClick(notice, true, "PAD1", "FlickChatNoticeSwap") end
+                SetOverrideBindingClick(notice, true, "PADLSHOULDER", "FlickChatNoticeSmaller")
+                SetOverrideBindingClick(notice, true, "PADRSHOULDER", "FlickChatNoticeLarger")
                 SetOverrideBindingClick(notice, true, "PAD3", "FlickChatNoticeCheck")
                 SetOverrideBindingClick(notice, true, "PAD2", "FlickChatNoticeOkay")
             end
         end
-        notice:SetScript("OnEvent", function(self) Pad(self:IsShown()) end)
+        notice:SetScript("OnEvent", function(self) self.Pad(self:IsShown()) end)
         notice:SetScript("OnShow", function(self)
+            self.switched = false
             check:SetChecked(ROWS.hideLine[1]())
-            Tell()
-            Pad(true)
+            self.Pad(true)
+            if ns.PreviewKeyboard then ns.PreviewKeyboard(self) end
         end)
-        notice:SetScript("OnHide", function() Pad(false) end)
+        notice:SetScript("OnHide", function(self)
+            ns.db.welcomed = true
+            self.Pad(false)
+            if ns.PreviewKeyboard then ns.PreviewKeyboard() end
+        end)
         options.notice = notice
     end
     notice:Show()
