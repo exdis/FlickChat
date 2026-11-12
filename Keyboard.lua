@@ -33,10 +33,10 @@ local MISSING_PAUSE = 1.2
 -- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
 local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty" }
--- The word that teaches chained flicks (its first letters sit side by side on one stick), as a drill: its first
--- two letters in one move, then three, then all four. A stage not done in one move is asked again, and let
--- through after LESSON.misses of them.
-LESSON.roll, LESSON.stages, LESSON.misses = 4, { 2, 3, 4 }, 3
+-- The word that teaches chained flicks (its first five letters are all on one stick), as a drill: its first two
+-- letters in one move, then four, then all five (the fifth a swing straight across the middle). A stage not
+-- done in one move is asked again, and let through after LESSON.misses of them.
+LESSON.roll, LESSON.stages, LESSON.misses = 4, { 2, 4, 5 }, 3
 local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [8] = true }, { [5] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
 -- A d-pad slot's direction word (DIR_n): up, left, right, down.
 local SLOT_DIR = { 1, 4, 2, 3 }
@@ -528,12 +528,30 @@ end
 -- The chained flicks drill, judged as a stick comes back to rest: the stage's letters and no others, all but the
 -- first of them rolled to. Done, the next stage starts from an empty word (the last keeps its letters); missed,
 -- the same stage again.
-function LESSON.Drill()
+function LESSON.Drill(late)
     local lesson = S.lesson
+    if lesson.wait then
+        lesson.wait:Cancel()
+        lesson.wait = nil
+    end
     if S.flicks == "" then return end
     local stage = lesson.stage or 1
     local want = D.KeyOf(LESSON[LESSON.roll]):sub(1, LESSON.stages[stage])
-    local good = S.flicks == want and (lesson.rolls or 0) >= #want - 1
+    -- A swing straight across passes through rest: with the box across still to come, a moment's wait for it.
+    local last, coming = tonumber(S.flicks:sub(-1)), tonumber(want:sub(#S.flicks + 1, #S.flicks + 1))
+    if not late and coming and want:sub(1, #S.flicks) == S.flicks and (last - coming) % 4 == 2 then
+        lesson.wait = C_Timer.NewTimer(0.4, function()
+            lesson.wait = nil
+            if S.lesson == lesson and lesson.at == LESSON.roll and not lesson.chained then LESSON.Drill(true) end
+        end)
+        return
+    end
+    -- Rolled: every step to the box next door (a swing across is no roll).
+    local rolls = 0
+    for i = 2, #want do
+        if (tonumber(want:sub(i, i)) - tonumber(want:sub(i - 1, i - 1))) % 2 == 1 then rolls = rolls + 1 end
+    end
+    local good = S.flicks == want and (lesson.rolls or 0) >= rolls
     if good or (lesson.missCount or 0) + 1 >= LESSON.misses then
         lesson.stage, lesson.missCount, lesson.missed, lesson.praise = stage + 1, 0, false, good
         lesson.chained = stage == #LESSON.stages
