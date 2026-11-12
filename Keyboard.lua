@@ -750,7 +750,12 @@ local function Close()
         S.naming = nil
         return Paint()
     end
-    draft = box.chatFrame and not S.lesson and S.written:find("%S") and S.written or nil
+    -- B on a message empties the line (the game's own Escape) and B again leaves chat: the message is kept at the
+    -- first. One that came back and goes again untouched is let go for good.
+    if box.chatFrame and not S.lesson and S.written:find("%S") then
+        draft = S.written ~= S.restored and S.written or nil
+        S.restored = nil
+    end
     -- In a fight the game refuses a chat box's focus dropped by addon code (its controller state stays on chat):
     -- the keyboard steps back and the pad is the game's again, whose own Back shuts chat.
     if box.chatFrame and InCombatLockdown() then
@@ -1151,7 +1156,7 @@ local function Hint()
     if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
-    if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
+    if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PAD2")) end
     if S.forget then return L["FORGET_ASK"]:format(S.forget:lower(), Glyph("PAD1")) end
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
@@ -1816,10 +1821,9 @@ local function Open(edit)
     local text = edit:GetText()
     S.lesson = not ns.db.lessonDone and { at = 1, peaks = {} } or nil
     local back = draft and edit.chatFrame and text == "" and not S.lesson and not ns.dev
-    if back then text = draft end
-    draft = nil
+    if back then text, draft = draft, nil end
     Reset(text)
-    S.draftBack = back or nil
+    S.draftBack, S.restored = back or nil, back and text or nil
     ns.Restyle()
     PlaceBy(edit)
     kb.bar:ClearAllPoints()
