@@ -33,9 +33,10 @@ local MISSING_PAUSE = 1.2
 -- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
 local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty" }
--- The word that teaches chained flicks (its first letters sit side by side on one stick): taken with fewer than
--- LESSON.rolls of them rolled it comes back out to be tried again, LESSON.tries times at most.
-LESSON.roll, LESSON.rolls, LESSON.tries = 4, 2, 2
+-- The word that teaches chained flicks (its first letters sit side by side on one stick), as a drill: its first
+-- two letters in one move, then three, then all four. A stage not done in one move is asked again, and let
+-- through after LESSON.misses of them.
+LESSON.roll, LESSON.stages, LESSON.misses = 4, { 2, 3, 4 }, 3
 local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [8] = true }, { [5] = "LESSON_LINE2", [9] = "LESSON_LINE3" }
 -- A d-pad slot's direction word (DIR_n): up, left, right, down.
 local SLOT_DIR = { 1, 4, 2, 3 }
@@ -200,12 +201,6 @@ local function LessonStep(done)
     if not lesson or done:lower() ~= LESSON[lesson.at] then return end
     -- A line done: the box is emptied for the next.
     if LESSON_LINE_END[lesson.at] then S.committed, S.autoSpace, S.undo = "", false, nil end
-    if lesson.at == LESSON.roll and (lesson.rolls or 0) < LESSON.rolls and (lesson.rollTries or 0) < LESSON.tries then
-        lesson.rollTries, lesson.rolls = (lesson.rollTries or 0) + 1, 0
-        if S.undo then S.committed = S.undo.committed end
-        S.undo, S.autoSpace = nil, false
-        return
-    end
     -- Past the last word the lesson waits for the send (Send ends it).
     lesson.at, lesson.rolls = lesson.at + 1, 0
 end
@@ -530,6 +525,28 @@ local function Roll(st, x, y, len)
     end
 end
 
+-- The chained flicks drill, judged as a stick comes back to rest: the stage's letters and no others, all but the
+-- first of them rolled to. Done, the next stage starts from an empty word (the last keeps its letters); missed,
+-- the same stage again.
+function LESSON.Drill()
+    local lesson = S.lesson
+    if S.flicks == "" then return end
+    local stage = lesson.stage or 1
+    local want = D.KeyOf(LESSON[LESSON.roll]):sub(1, LESSON.stages[stage])
+    local good = S.flicks == want and (lesson.rolls or 0) >= #want - 1
+    if good or (lesson.missCount or 0) + 1 >= LESSON.misses then
+        lesson.stage, lesson.missCount, lesson.missed, lesson.praise = stage + 1, 0, false, good
+        lesson.chained = stage == #LESSON.stages
+        if not (lesson.chained and good) then S.flicks = "" end
+    else
+        lesson.missCount, lesson.missed, lesson.praise = (lesson.missCount or 0) + 1, true, false
+        S.flicks = ""
+    end
+    lesson.rolls, S.literal = 0, nil
+    Guess()
+    Show()
+end
+
 local function OnStick(_, which, x, y, len)
     local st = sticks[which]
     if not st or not box then return end
@@ -551,6 +568,7 @@ local function OnStick(_, which, x, y, len)
     elseif len <= ns.db.rearm then
         st.out = false
         Release(st, GetTime())
+        if S.lesson and S.lesson.at == LESSON.roll and not S.lesson.chained then LESSON.Drill() end
         Paint()
     else
         local was = st.dir or Dir4(st.px, st.py)
@@ -1146,6 +1164,25 @@ local function LessonText()
         return L["LESSON_PUNCT_FLICK"]
     end
     local key = D.KeyOf(target)
+    if lesson.at == LESSON.roll and not lesson.chained then
+        local stage = lesson.stage or 1
+        local letters, ways = {}, {}
+        for j = 1, LESSON.stages[stage] do
+            letters[j] = target:sub(j, j)
+            ways[j] = L["DIR_" .. ((tonumber(key:sub(j, j)) - 1) % 4 + 1)]
+        end
+        lesson.next = tonumber(key:sub(#S.flicks + 1, #S.flicks + 1))
+        local stick = L[tonumber(key:sub(1, 1)) <= 4 and "STICK_LEFT" or "STICK_RIGHT"]
+        local text
+        if stage == 1 then
+            text = L["LESSON_CHAIN_1"]:format(stick, ways[1], letters[1], ways[2], letters[2])
+        else
+            text = L[stage == #LESSON.stages and "LESSON_CHAIN_ALL" or "LESSON_CHAIN_MORE"]:format(
+                table.concat(letters, ", "), stick, table.concat(ways, ", "))
+        end
+        local before = lesson.missed and L["LESSON_CHAIN_MISS"] or lesson.praise and L["LESSON_CHAIN_GOOD"]
+        return before and before .. "\n\n" .. text or text
+    end
     if key:sub(1, #S.flicks) ~= S.flicks then
         -- What went wrong at the first flick that missed: the other stick, another direction, or one flick too many.
         local i = 1
@@ -1164,16 +1201,15 @@ local function LessonText()
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n\n" or ""
     local rolling = lesson.at == LESSON.roll
-    if rolling and #S.flicks == 0 then
-        intro = L[(lesson.rollTries or 0) > 0 and "LESSON_ROLL_RETRY" or "LESSON_ROLL"]:format(target) .. "\n\n"
-    end
+    -- The drill just done: a word of praise before the rest of the word.
+    if rolling and lesson.praise then intro = L["LESSON_CHAIN_GOOD"] .. " " end
     -- A word already over the d-pad is taken there, from the first word on: watching for it is the habit to
     -- teach. A next word guessed before any flick counts too (the last word, sent with A, is always flicked).
     if #S.flicks < #key then
         for slot = 1, #SLOT_KEYS do
             if (S.slots[slot] or ""):lower() == target
                 and (#S.flicks > 0 or lesson.at < #LESSON)
-                and (not rolling or (lesson.rolls or 0) >= LESSON.rolls) then
+                and (not rolling or lesson.chained) then
                 local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
                 lesson.slot = slot
                 return intro .. L[line]:format(target, L["DIR_" .. SLOT_DIR[slot]])
@@ -1191,11 +1227,6 @@ local function LessonText()
         -- A word's first flick names the word (the line's first word, or the next); its later ones carry on.
         local line = L[i > 1 and "LESSON_FLICK_ON" or opens and "LESSON_FLICK_FIRST" or "LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
             L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
-        -- On the rolled word a letter next door on the same stick is rolled to, not flicked.
-        local before = i > 1 and tonumber(key:sub(i - 1, i - 1))
-        if rolling and before and (before <= 4) == (digit <= 4) and (before - digit) % 2 == 1 then
-            line = L["LESSON_ROLL_ON"]:format(Groups()[digit], target:sub(i, i))
-        end
         if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n\n" .. line end
         if intro ~= "" then return intro .. line end
         if shown ~= target:sub(1, #S.flicks) then
