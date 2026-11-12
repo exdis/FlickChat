@@ -6,7 +6,7 @@ ns.L = setmetatable({}, { __index = function(_, key) return ns.EN and ns.EN[key]
 -- learned: word -> times sent; pairs: "word next" -> times ("<s>" starts a message); forms: a word's own capitals;
 -- uses: how often each hint's action was used (a hint goes once learned); arm/rearm: a flick's tilt out and back;
 -- phrases: the player's own quick phrases by slot (an empty slot is the language's default).
-local DEFAULTS = { enabled = true, learned = {}, pairs = {}, forms = {}, uses = {}, layout = "letters", size = 100,
+local DEFAULTS = { enabled = true, learned = {}, pairs = {}, forms = {}, forgot = {}, uses = {}, layout = "letters", size = 100,
     arm = 0.55, rearm = 0.3, lessonDone = false, phrases = {}, wheelSize = 100, wordRoom = 100 }
 local DB_VERSION = 1
 local LEARN_CAP, PAIR_CAP = 2000, 4000
@@ -76,6 +76,22 @@ local function Trim(counts, cap)
     for key, count in pairs(counts) do
         counts[key] = count > 1 and math.floor(count / 2) or nil
     end
+end
+
+-- A word dropped off the d-pad: its counts go and it is never guessed, until the player spells it out again.
+function ns.Forget(word)
+    local db, low = ns.db, word:lower()
+    db.forgot[low] = true
+    db.learned[low], db.forms[low] = nil, nil
+    for pair in pairs(db.pairs) do
+        local prev, after = pair:match("^(%S+) (%S+)$")
+        if prev == low or after == low then db.pairs[pair] = nil end
+    end
+end
+
+function ns.ForgottenBack()
+    wipe(ns.db.forgot)
+    ns.Say(ns.L["FORGOT_BACK"])
 end
 
 -- A sent message's words and word pairs, so guesses learn the player's words and how they follow each other.
@@ -265,6 +281,9 @@ function ns.BuildOptions()
     layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function()
         ns.RunLessonAgain()
     end, nil, true))
+    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function()
+        ns.ForgottenBack()
+    end, L["OPT_FORGOT_TIP"], true))
     -- The quick phrases: a row each, its button showing the phrase; pressed, a box over the button takes the typing
     -- (the game's rows have no text box), by keys or by the keyboard.
     for slot = 1, 8 do

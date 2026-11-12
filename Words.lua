@@ -204,6 +204,9 @@ zoophiliaing zoophilias
 local mature = {}
 for low in MATURE:gmatch("%S+") do mature[low] = true end
 local filtering = false
+-- Words the player dropped off the d-pad: never guessed.
+local forgot = NONE
+local function Barred(low) return forgot[low] or (filtering and mature[low]) end
 local total = 1
 
 local function KeyOf(word)
@@ -468,7 +471,7 @@ local function RareLeaf(lines, prefix, n, cost, maxExtra, prevId, prevLow)
         local key, word, count, nextAt = match(lines, "^\n(%d+) (%S+) (%d+)()", at)
         if not key or sub(key, 1, n) ~= prefix then return end
         local low = lower(word)
-        if not (filtering and mature[low]) then
+        if not Barred(low) then
             local extra = #key - n
             local score = Score(nil, low, count / total, prevId, prevLow) + cost
             if extra <= maxExtra then Keep(word, low, score - extra * EXTRA_COST) end
@@ -487,7 +490,7 @@ local function Walk(seq, n, i, prefix, lo, hi, cost, subs, prevId, prevLow)
         local maxExtra = subs > 0 and SUB_EXTRA or math.min(MAX_EXTRA, n + 2)
         for j = lo, hi - 1 do
             local id = order[j]
-            if not (filtering and mature[lows[id]]) then
+            if not Barred(lows[id]) then
                 local extra = #keys[id] - n
                 local score = Score(id, lows[id], nil, prevId, prevLow) + cost
                 if extra <= maxExtra then Keep(words[id], lows[id], score - extra * EXTRA_COST) end
@@ -544,11 +547,11 @@ function D.Decode(seq, prevLow)
     local n = #seq
     if n == 0 then return Result(), {} end
     exact.word, exact.score = nil, -math.huge
-    filtering = ns.db.matureFilter == true
+    filtering, forgot = ns.db.matureFilter == true, ns.db.forgot
     local prevId = PrevId(prevLow)
     Walk(seq, n, 1, "", 1, #sorted + 1, 0, 0, prevId, prevLow)
     for _, e in ipairs(extras) do
-        local cost = e.key and Match(e.key, seq)
+        local cost = e.key and not forgot[e.low] and Match(e.key, seq)
         if cost then
             local score = Score(nil, e.low, e.chance, prevId, prevLow) + cost
             Keep(e.word, e.low, score)
@@ -600,21 +603,21 @@ function D.Next(prevLow)
     best.n = 0
     local prevId = PrevId(prevLow)
     local h = Followers(prevId)
-    filtering = ns.db.matureFilter == true
+    filtering, forgot = ns.db.matureFilter == true, ns.db.forgot
     for _, id in ipairs(h and h.top or NONE) do
-        if not (filtering and mature[lows[id]]) then Keep(words[id], lows[id], Score(id, lows[id], nil, prevId, prevLow)) end
+        if not Barred(lows[id]) then Keep(words[id], lows[id], Score(id, lows[id], nil, prevId, prevLow)) end
     end
     local after = own.next[prevLow or "<s>"]
     if after then
         for low in pairs(after) do
             local id = idOf[low]
             local word = id and words[id] or ns.db.forms[low] or RareForm(low) or low
-            if not (filtering and mature[low]) then Keep(word, low, Score(id, low, not id and 1e-7 or nil, prevId, prevLow)) end
+            if not Barred(low) then Keep(word, low, Score(id, low, not id and 1e-7 or nil, prevId, prevLow)) end
         end
     end
     for id = 1, GUESSES do
         if best.n >= GUESSES then break end
-        Keep(words[id], lows[id], Score(id, lows[id], nil, prevId, prevLow) - 20)
+        if not Barred(lows[id]) then Keep(words[id], lows[id], Score(id, lows[id], nil, prevId, prevLow) - 20) end
     end
     return Result()
 end

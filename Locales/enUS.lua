@@ -45,6 +45,12 @@ ns.EN = {
     CLOSE = "Close",
     HINT_EXACT = "Exact letters: flick to a box, then flick toward its letter.",
     HINT_EXACT_PICK = "Now flick toward the letter.",
+    FORGET_ASK = "Forget \"%s\"? It will not be suggested again. %s forgets it, any other button keeps it.",
+    FORGOT = "forgot \"%s\". Spell it in exact letters to have it back.",
+    OPT_FORGOT = "Words you forgot",
+    OPT_FORGOT_BUTTON = "Suggest them again",
+    OPT_FORGOT_TIP = "Hold a word's d-pad button while typing to forget that word.",
+    FORGOT_BACK = "the words you forgot are suggested again.",
     HINT_NAMING = "Whisper who? The d-pad holds the likeliest people: pick one, or flick the first letters of a"
         .. " name (or BattleTag) to narrow it. B cancels.",
     NAMING_NONE = "No one online fits those flicks. LT takes the last one back.",

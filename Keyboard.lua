@@ -61,6 +61,7 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local DISC = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local YELLOW, BLUE, IDLE = { 0.94, 0.89, 0.26 }, { 0.34, 0.71, 0.91 }, { 0.82, 0.82, 0.82 }
 local LETTER_COLOR = { 1, 1, 1 }
+local FORGET_COLOR = { 1, 0.3, 0.25 }
 
 local UTF8_LAST = "[%z\1-\127\194-\244][\128-\191]*$"
 local GetBindingText, GetTime, IsUsingGamepad = _G.GetBindingText, _G.GetTime, _G.IsUsingGamepad
@@ -203,6 +204,7 @@ local function Commit(word, space)
     if S.literal then
         local low = S.literal:lower()
         ns.db.learned[low] = (ns.db.learned[low] or 0) + 1
+        ns.db.forgot[low] = nil
         if S.literal ~= low then ns.db.forms[low] = S.literal end
         D.Refresh(S.names)
     end
@@ -344,6 +346,7 @@ end
 
 local function Emit(digit)
     Sync()
+    S.forget = nil
     if S.aDown and not S.phrases then OpenPhrases() end
     if S.phrases then
         if S.phraseSave then return SavePhrase(digit) end
@@ -568,6 +571,26 @@ local function NextGuess()
     Show()
 end
 
+local function StopSlotHold()
+    if S.slotTimer then S.slotTimer:Cancel() end
+    S.slotTimer = nil
+end
+
+-- A d-pad word held on: it comes back out of the message and the player is asked whether to forget it.
+local function HoldToForget(word)
+    StopSlotHold()
+    S.slotTimer = C_Timer.NewTimer(HOLD_DELAY, function()
+        S.slotTimer = nil
+        local u = S.undo
+        if not box or not u or u.after ~= S.committed then return end
+        S.committed, S.flicks, S.literal, S.undo, S.autoSpace = u.committed, u.flicks, u.literal, nil, false
+        Guess()
+        if u.flicks ~= "" then S.shown = math.max(1, math.min(u.shown, #S.stems)) end
+        S.forget = word
+        Show()
+    end)
+end
+
 local function TakeSlot(slot)
     if S.naming then return TakeName(slot) end
     local word = S.slots[slot]
@@ -576,6 +599,7 @@ local function TakeSlot(slot)
     Use("slot")
     Guess()
     Show()
+    if not S.lesson then HoldToForget(word) end
 end
 
 local function Capital()
@@ -596,7 +620,8 @@ local function Reset(text)
     S.guesses, S.stems, S.shown, S.slots, S.undo = {}, {}, 0, {}, nil
     S.autoSpace, S.caps, S.capsLock, S.symbols, S.wheel = false, false, false, false, nil
     S.exact, S.box, S.naming, S.phrases, S.aDown = false, nil, nil, false, false
-    S.phraseSave, S.phraseNoText = false, false
+    S.phraseSave, S.phraseNoText, S.forget = false, false, nil
+    StopSlotHold()
     for _, st in pairs(sticks) do st.out, st.held, st.waiting, st.lastDir = false, false, nil, nil end
 end
 
@@ -857,6 +882,18 @@ local function Press(button)
     if not box then return end
     Sync()
     if S.wheel then return WheelPress(button) end
+    if S.forget then
+        -- A forgets the word; any other button keeps it and does nothing else.
+        local word = S.forget
+        S.forget = nil
+        if button == "PAD1" then
+            ns.Forget(word)
+            D.Refresh(S.names)
+            Guess()
+            ns.Say(L["FORGOT"]:format(word:lower()))
+        end
+        return Show()
+    end
     if button == "PADRTRIGGER" then
         Accept()
     elseif button == "PADLTRIGGER" and S.phraseSave then
@@ -912,7 +949,9 @@ local function Press(button)
 end
 
 local function Unpress(button)
-    if button == "PADLTRIGGER" then
+    if SLOT_OF[button] then
+        StopSlotHold()
+    elseif button == "PADLTRIGGER" then
         StopHold()
     elseif button == "PAD1" and S.aDown then
         local tapped = S.aTimer ~= nil
@@ -1027,6 +1066,7 @@ end
 local function Hint()
     if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
     if S.wheel then return "" end
+    if S.forget then return L["FORGET_ASK"]:format(S.forget:lower(), Glyph("PAD1")) end
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
         if S.phraseNoText then return L["PHRASE_NEED_TEXT"]:format(Glyph("PAD1"), Glyph("PAD3")) end
@@ -1220,6 +1260,7 @@ Paint = function()
             lit = word and word:lower() == shown
         end
         local color = lit and YELLOW or IDLE
+        if S.forget and word and word:lower() == S.forget:lower() then color = FORGET_COLOR end
         slot:SetTextColor(color[1], color[2], color[3])
         kb.marks[i]:SetAlpha(word and 1 or 0.35)
     end
@@ -1230,7 +1271,7 @@ Paint = function()
         kb.hintSize = size
     end
     -- Under the window, and gone with the hints the player hid; the lesson's lines always show.
-    kb.hint:SetText(text ~= "" and (S.lesson or not ns.db.guideOff) and text or nil)
+    kb.hint:SetText(text ~= "" and (S.lesson or S.forget or not ns.db.guideOff) and text or nil)
     Layout()
 end
 
