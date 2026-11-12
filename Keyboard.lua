@@ -24,6 +24,8 @@ local RIM, TURN, SETTLED = 0.8, 60, 30
 local DIR_DEGREES = { 90, 0, -90, 180 }
 local HOLD_DELAY, HOLD_REPEAT, DOUBLE_TAP, FLASH = 0.45, 0.25, 0.4, 0.18
 local FLICK_TIP_USES = 30
+-- The symbols page's line shows, hints hidden or not, until the player has held a box and picked from it this often.
+local PICK_TIP_USES = 3
 -- A pause this long on flicks no whole word fits: the player may think the word done, so say how to spell it.
 local MISSING_PAUSE = 1.2
 -- The first-run lesson types "are you up?" with each box lit ("up" first guesses "to": RT's turn), then the
@@ -394,7 +396,10 @@ local function Pick(digit, x, y)
     Sync()
     local i = Dir4(x, y)
     local c = SYMBOLS[digit]:sub(i, i)
-    if c ~= "" then TypeSymbol(c) end
+    if c ~= "" then
+        Use("pick")
+        TypeSymbol(c)
+    end
 end
 
 local function Release(st, now)
@@ -1375,7 +1380,7 @@ Paint = function()
         kb.hintSize = size
     end
     -- Under the window, and gone with the hints the player hid; the lesson's lines always show.
-    kb.hint:SetText(text ~= "" and (S.lesson or S.forget or S.move or not ns.db.guideOff) and text or nil)
+    kb.hint:SetText(text ~= "" and (S.lesson or S.forget or S.move or not ns.db.guideOff or S.symbols and (ns.db.uses.pick or 0) < PICK_TIP_USES) and text or nil)
     Layout()
 end
 
