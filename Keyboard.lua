@@ -1087,11 +1087,14 @@ local function PaintRose(rose, st)
         else
             cell.text:SetText(picking and "" or GroupText(groups[digit]))
         end
+        -- A box held on the other stick: its symbols stand in this stick's boxes, marked as the ones to pick from.
+        local choice = not ring and not latched and picking and #picking <= 4 and picking:sub(dir, dir) or ""
+        if choice ~= "" then cell.text:SetText(GroupText(choice)) end
         local pointed = st.out and not S.symbols and (st.dir or Dir4(st.px, st.py)) == dir
         local gold = (cell.flashUntil or 0) > now or digit == lit or pointed
         cell.lit:SetShown(gold)
-        cell.focus:SetShown(not gold and Holding(st) and Dir4(st.px, st.py) == dir)
-        local color = gold and YELLOW or LETTER_COLOR
+        cell.focus:SetShown(choice ~= "" or not gold and Holding(st) and Dir4(st.px, st.py) == dir)
+        local color = gold and YELLOW or choice ~= "" and BLUE or LETTER_COLOR
         cell.text:SetTextColor(color[1], color[2], color[3])
     end
     rose.wheel = ring ~= nil
@@ -1099,7 +1102,7 @@ local function PaintRose(rose, st)
         local c = ""
         if picking then
             if #picking <= 4 then
-                if i % 2 == 1 then c = picking:sub((i + 1) / 2, (i + 1) / 2) end
+                c = ""
             else
                 c = picking:sub(i, i)
             end
