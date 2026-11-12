@@ -1175,7 +1175,19 @@ end
 
 -- The line over the legend: what to do right now.
 local function Hint()
-    if S.lesson then return LessonText() end
+    if S.lesson then
+        -- On top the goal: the whole line being typed, white, its finished words greyed; then the step.
+        local at, first, words = S.lesson.at, 1, {}
+        for i = 1, #LESSON do
+            if LESSON_LINE_END[i] and i < at then first = i + 1 end
+        end
+        for i = first, #LESSON do
+            local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. LESSON[i] .. "|r"
+            if LESSON[i] == "?" and #words > 0 then words[#words] = words[#words] .. word else words[#words + 1] = word end
+            if LESSON_LINE_END[i] then break end
+        end
+        return L["LESSON_GOAL"]:format(table.concat(words, " ")) .. "\n\n" .. LessonText()
+    end
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
