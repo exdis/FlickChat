@@ -130,7 +130,6 @@ ns.EN = {
     LESSON_DPAD = "\"%s\" is over the d-pad: press the d-pad %s to take it.",
     LESSON_SEND = "\"%s\" is in the chat box. %s sends a line; in the lesson it only ends the lesson.",
     LESSON_SKIP_LINE = "%s skips the lesson.",
-    FIGHT_CLOSE = "in a fight the game shuts chat itself: press %s once more.",
     OPT_CHAT_KEY = "Controller button that opens chat",
     CHAT_KEY_NONE = "None",
     OPT_CHAT_KEY_TIP = "Press to step through the free buttons, then back to none. Your other keys for chat, such as Enter, stay as they are.",
