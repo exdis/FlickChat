@@ -89,6 +89,12 @@ function ns.Forget(word)
     end
 end
 
+-- The keyboard's place and size: set with the sticks the next time it opens.
+function ns.MoveNext()
+    ns.moveNext = true
+    ns.Say(ns.L["MOVE_NEXT"])
+end
+
 function ns.ForgottenBack()
     wipe(ns.db.forgot)
     ns.Say(ns.L["FORGOT_BACK"])
@@ -281,6 +287,9 @@ function ns.BuildOptions()
         ns.NextChatKey()
         button:SetText(ns.ChatKeyText())
     end, L["OPT_CHAT_KEY_TIP"], true))
+    layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function()
+        ns.MoveNext()
+    end, L["OPT_MOVE_TIP"], true))
     layout:AddInitializer(CreateSettingsButtonInitializer(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function()
         ns.RunLessonAgain()
     end, nil, true))
@@ -579,6 +588,8 @@ SlashCmdList.FLICKCHAT = function(msg)
         if ns.Relayout then ns.Relayout() end
     elseif cmd == "lesson" then
         ns.RunLessonAgain()
+    elseif cmd == "move" then
+        ns.MoveNext()
     elseif cmd == "new" then
         -- What a new player on the Classic chat style meets at login, whatever the style is now.
         ns.StyleNotice()

@@ -70,7 +70,7 @@ local kb, box
 local S = { committed = "", written = "", flicks = "", guesses = {}, stems = {}, shown = 0, slots = {} }
 local sticks = { Left = { base = 0 }, Right = { base = 4 } }
 sticks.Left.other, sticks.Right.other = sticks.Right, sticks.Left
-local Paint, WheelStick
+local Paint, WheelStick, PlaceBy
 
 local function Glyph(key) return GetBindingText(key, 1) end
 
@@ -427,6 +427,67 @@ local function Release(st, now)
     end
 end
 
+-- Move mode (/flick move or the settings row, then the next time the keyboard opens): the left stick carries the
+-- keyboard, the right stick sizes it. A keeps it there, B puts it back, Y gives the place and size it came with.
+local Move = { SPEED = 520, SIZE_STEP = 5, SIZE_EVERY = 0.12, DEAD = 0.25 }
+
+function Move.End()
+    if S.move then S.move.ticker:Cancel() end
+    S.move = nil
+    Paint()
+end
+
+function Move.Start()
+    local db = ns.db
+    local move = { x = db.moveX or 0, y = db.moveY or 0, size = db.size, lx = 0, ly = 0, ry = 0, last = GetTime(),
+        sized = 0 }
+    S.move = move
+    move.ticker = C_Timer.NewTicker(0.02, function()
+        local now = GetTime()
+        local dt = math.min(0.1, now - move.last)
+        move.last = now
+        if not box or not kb:IsShown() then return Move.End() end
+        if move.lx ~= 0 or move.ly ~= 0 then
+            local wasX, wasY, left, bottom = db.moveX or 0, db.moveY or 0, kb:GetLeft(), kb:GetBottom()
+            db.moveX, db.moveY = wasX + move.lx * Move.SPEED * dt, wasY + move.ly * Move.SPEED * dt
+            PlaceBy(box)
+            -- At the screen's edge the game holds the keyboard: a push it did not follow is not kept.
+            if move.lx ~= 0 and kb:GetLeft() == left then db.moveX = wasX end
+            if move.ly ~= 0 and kb:GetBottom() == bottom then db.moveY = wasY end
+        end
+        if math.abs(move.ry) > 0.5 and now - move.sized >= Move.SIZE_EVERY then
+            move.sized = now
+            db.size = math.max(70, math.min(200, db.size + (move.ry > 0 and Move.SIZE_STEP or -Move.SIZE_STEP)))
+            ns.Restyle()
+            PlaceBy(box)
+        end
+    end)
+    Paint()
+end
+
+function Move.Stick(which, x, y, len)
+    local move = S.move
+    if len < Move.DEAD then x, y = 0, 0 end
+    if which == "Left" then move.lx, move.ly = x, y else move.ry = y end
+end
+
+function Move.Press(button)
+    local db, move = ns.db, S.move
+    if button == "PAD1" then
+        Move.End()
+        ns.Say(L["MOVE_SAVED"])
+    elseif button == "PAD2" then
+        db.moveX, db.moveY, db.size = move.x, move.y, move.size
+        Move.End()
+        ns.Restyle()
+        PlaceBy(box)
+    elseif button == "PAD4" then
+        db.moveX, db.moveY, db.size = 0, 0, 100
+        ns.Restyle()
+        PlaceBy(box)
+    end
+end
+
 local function Off(degrees, dir) return math.abs((degrees - DIR_DEGREES[dir] + 180) % 360 - 180) end
 
 -- On the rim: which direction the stick holds, and a roll into the next one counted as a flick of its own.
@@ -448,6 +509,7 @@ end
 local function OnStick(_, which, x, y, len)
     local st = sticks[which]
     if not st or not box then return end
+    if S.move then return Move.Stick(which, x, y, len) end
     if S.wheel then return WheelStick(which, x, y) end
     st.x, st.y = x, y
     if probe then Note(string.format("%s %.2f %.2f %.2f", which, x, y, len)) end
@@ -625,6 +687,10 @@ local function Reset(text)
     S.autoSpace, S.caps, S.capsLock, S.symbols, S.wheel = false, false, false, false, nil
     S.exact, S.box, S.naming, S.phrases, S.aDown = false, nil, nil, false, false
     S.phraseSave, S.phraseNoText, S.phraseSend, S.forget = false, false, false, nil
+    if S.move then
+        S.move.ticker:Cancel()
+        S.move = nil
+    end
     StopSlotHold()
     for _, st in pairs(sticks) do st.out, st.held, st.waiting, st.lastDir = false, false, nil, nil end
 end
@@ -891,6 +957,7 @@ local function Press(button)
     if not box then return end
     Sync()
     S.draftBack = nil
+    if S.move then return Move.Press(button) end
     if S.wheel then return WheelPress(button) end
     if S.forget then
         -- A forgets the word; any other button keeps it and does nothing else.
@@ -1083,6 +1150,7 @@ end
 local function Hint()
     if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
     if S.wheel then return "" end
+    if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
     if S.forget then return L["FORGET_ASK"]:format(S.forget:lower(), Glyph("PAD1")) end
     if S.phrases then
@@ -1134,6 +1202,9 @@ local function Labels()
     -- A settings box: A saves what is typed, B leaves it as it was; no channels there.
     if box and not box.chatFrame then
         labels.PAD1, labels.PAD2, labels.PAD4 = L["SAVE"], L["CANCEL"], ""
+    end
+    if S.move then
+        labels.PAD1, labels.PAD2, labels.PAD4, labels.PAD3 = L["SAVE"], L["CANCEL"], L["MOVE_RESET"], ""
     end
     return labels
 end
@@ -1195,7 +1266,18 @@ local function PlacePrompts()
         P[key].icon:SetAlpha(used and 1 or 0)
         if used then
             PlacePrompt(P[key], kb.bar, x + BAR_ICON / 2, BAR_H / 2)
-            x = x + BAR_ICON + LABEL_GAP + P[key].label:GetStringWidth() + BAR_GAP
+            local label = P[key].label
+            local width = label:GetStringWidth()
+            -- X's label flips between two words: room for the longer, so what follows it never shifts.
+            if key == "PAD3" and not S.phrases and not S.move then
+                local now = label:GetText()
+                label:SetText(L["SYMBOLS"])
+                width = math.max(width, label:GetStringWidth())
+                label:SetText(L["LETTERS"])
+                width = math.max(width, label:GetStringWidth())
+                label:SetText(now)
+            end
+            x = x + BAR_ICON + LABEL_GAP + width + BAR_GAP
         end
     end
     kb.bar:SetSize(x - BAR_GAP + BAR_PAD, BAR_H)
@@ -1291,7 +1373,7 @@ Paint = function()
         kb.hintSize = size
     end
     -- Under the window, and gone with the hints the player hid; the lesson's lines always show.
-    kb.hint:SetText(text ~= "" and (S.lesson or S.forget or not ns.db.guideOff) and text or nil)
+    kb.hint:SetText(text ~= "" and (S.lesson or S.forget or S.move or not ns.db.guideOff) and text or nil)
     Layout()
 end
 
@@ -1657,14 +1739,17 @@ local function Names()
 end
 
 -- Beside the chat box on the side with more room, bottoms level.
-local function PlaceBy(edit)
+PlaceBy = function(edit)
     kb:ClearAllPoints()
     local x = edit:GetCenter()
     local left = x and x * edit:GetEffectiveScale() < UIParent:GetWidth() * UIParent:GetEffectiveScale() / 2
+    -- Beside the chat line, plus how far the player carried it (kept in screen units, whatever its size).
+    local scale = kb:GetScale()
+    local dx, dy = (ns.db.moveX or 0) / scale, (ns.db.moveY or 0) / scale
     if left then
-        kb:SetPoint("BOTTOMLEFT", edit, "BOTTOMRIGHT", 12, 0)
+        kb:SetPoint("BOTTOMLEFT", edit, "BOTTOMRIGHT", 12 + dx, dy)
     else
-        kb:SetPoint("BOTTOMRIGHT", edit, "BOTTOMLEFT", -12, 0)
+        kb:SetPoint("BOTTOMRIGHT", edit, "BOTTOMLEFT", -12 + dx, dy)
     end
 end
 
@@ -1754,6 +1839,10 @@ local function Open(edit)
     PlaceGuide()
     Guess()
     Show()
+    if ns.moveNext and edit.chatFrame and not S.lesson then
+        ns.moveNext = nil
+        Move.Start()
+    end
     if ns.dev and ns.dev.Opened then ns.dev.Opened() end
 end
 
