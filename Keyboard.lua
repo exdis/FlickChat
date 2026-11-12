@@ -900,7 +900,11 @@ local function Press(button)
         end
         return Show()
     end
-    if button == "PADRTRIGGER" then
+    if button == "PADRTRIGGER" and S.phrases and S.phraseSend then
+        -- The phrases flicked so far start a sentence: letting go of A sends nothing.
+        S.phraseSend = false
+        Paint()
+    elseif button == "PADRTRIGGER" then
         Accept()
     elseif button == "PADLTRIGGER" and S.phraseSave then
         S.phraseSave = false
@@ -1079,7 +1083,9 @@ local function Hint()
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
         if S.phraseNoText then return L["PHRASE_NEED_TEXT"]:format(Glyph("PAD1"), Glyph("PAD3")) end
-        return L[ns.db.phraseFill and "HINT_PHRASES_FILL" or "HINT_PHRASES"]:format(Glyph("PAD3"), Glyph("PAD1"))
+        local sends = not ns.db.phraseFill and (S.phraseSend or not (Word() or S.committed:find("%S")))
+        if not sends then return L["HINT_PHRASES_FILL"]:format(Glyph("PAD3"), Glyph("PAD1")) end
+        return L["HINT_PHRASES"]:format(Glyph("PADRTRIGGER"), Glyph("PAD3"), Glyph("PAD1"))
     end
     if S.naming then
         if S.naming.flicks ~= "" and #S.naming.found == 0 then return L["NAMING_NONE"] end

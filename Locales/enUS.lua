@@ -70,8 +70,7 @@ ns.EN = {
     SEND_PHRASES = "Send (hold: phrases)",
     PHRASES = "hi|ty|np|brb|ready?|one sec|omw|inv pls",
     PROBE_STICKS = "recording stick movement for 40 seconds (numbers only, no text). /reload afterwards saves it.",
-    HINT_PHRASES = "Flick toward a phrase, or several. On an empty line they send when you let go; otherwise they"
-        .. " join your message. %s saves what you typed as a phrase. Let go of %s to go back.",
+    HINT_PHRASES = "Flick toward a phrase, or several. They send when you let go; press %s first to keep typing instead. %s saves what you typed as a phrase. Let go of %s to go back.",
     HINT_PHRASE_SAVE = "Flick toward the box this message should go in: it replaces that phrase. %s or letting go"
         .. " of %s cancels.",
     PHRASE_NEED_TEXT = "Type a message first, then hold %s and press %s to save it as a phrase.",
