@@ -21,9 +21,31 @@ end
 
 ns.events = CreateFrame("Frame")
 ns.events:RegisterEvent("ADDON_LOADED")
+-- The game's controller menu opens chat by a chat window's own SetGamepadFocus. An addon that replaced it (some
+-- chat addons empty it) leaves the menu's Chat doing nothing, and the keyboard never opens: said once a session,
+-- naming the addon the game itself blames for the changed function.
+local wheelTold = false
+local function WarnWheelOff()
+    local mixin = FloatingChatFrameMixin
+    local own = mixin and mixin.SetGamepadFocus
+    local controller = InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()
+    if wheelTold or not own or not controller or not ns.db.enabled then return end
+    for i = 1, NUM_CHAT_WINDOWS or 10 do
+        local chat = _G["ChatFrame" .. i]
+        if chat and chat.SetGamepadFocus ~= own then
+            local _, by = issecurevariable(chat, "SetGamepadFocus")
+            wheelTold = true
+            -- In red: nothing of the keyboard works until that addon is off.
+            return ns.Say("|cffff4040" .. ns.L["WHEEL_CHAT_OFF"]:format(by or ns.L["ANOTHER_ADDON"]) .. "|r")
+        end
+    end
+end
+
 ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "GAME_PAD_ACTIVE_CHANGED" then
         if ns.PadActive then ns.PadActive(arg1) end
+        -- The controller picked up after login: looked at again then.
+        if arg1 then C_Timer.After(1, WarnWheelOff) end
         return
     end
     if event == "PLAYER_LOGIN" then
@@ -50,6 +72,8 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- is the one the keyboard cannot open in. That one is told at each login until it is changed.
         local controller = InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()
         if ns.NeedsIMStyle() or (controller and not db.welcomed) then ns.StyleNotice() end
+        -- Other addons set their chat windows up as they log in too: looked at once they have.
+        C_Timer.After(5, WarnWheelOff)
         return
     end
     if event == "CHAT_MSG_WHISPER" then
@@ -131,7 +155,9 @@ function ns.Learn(text)
     Trim(db.pairs, PAIR_CAP)
 end
 
-function ns.Say(text) print("|cffffd100" .. ns.L["TITLE"] .. "|r " .. text) end
+-- The addon's own blue, its icon's: its name in chat and on its windows.
+ns.BLUE = { 0.18, 0.56, 0.90 }
+function ns.Say(text) print("|cff2e8fe6" .. ns.L["TITLE"] .. "|r " .. text) end
 
 -- What a settings button set going: a chat line, and the pressed button's own text says it where the player is
 -- looking. Never a dialog: a StaticPopup shown by addon code over the Settings window leaves the game's
@@ -322,6 +348,7 @@ function ns.StyleNotice()
         local title = notice:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -22)
         title:SetText(C_AddOns.GetAddOnMetadata(addonName, "Title"))
+        title:SetTextColor(ns.BLUE[1], ns.BLUE[2], ns.BLUE[3])
         -- top right: B closes (a button, for the mouse too)
         local close = CreateFrame("Button", "FlickChatNoticeClose", notice)
         close.text = close:CreateFontString(nil, "ARTWORK", "GameFontHighlight")

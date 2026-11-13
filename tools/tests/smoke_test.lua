@@ -391,5 +391,20 @@ own.scripts.OnGamePadButtonDown(own, "PADDLEFT")
 own.scripts.OnGamePadButtonDown(own, "PAD2")
 Is("B shuts it", own.shown, false)
 
+-- a chat window whose controller focus function another addon replaced: said once, naming who the game blames
+local said = {}
+local realPrint = print
+FloatingChatFrameMixin = { SetGamepadFocus = function() end }
+ChatFrame1 = { SetGamepadFocus = function() end }
+function issecurevariable() return false, "SomeChatAddon" end
+print = function(text) said[#said + 1] = text end
+ns.events.scripts.OnEvent(ns.events, "GAME_PAD_ACTIVE_CHANGED", true)
+timers[#timers]()
+ns.events.scripts.OnEvent(ns.events, "GAME_PAD_ACTIVE_CHANGED", true)
+timers[#timers]()
+print = realPrint
+Is("the switched-off menu Chat is said once", #said, 1)
+Has("naming the addon the game blames", said[1], "SomeChatAddon")
+
 print(failed == 0 and "all checks passed" or (failed .. " check(s) failed"))
 os.exit(failed == 0 and 0 or 1)
