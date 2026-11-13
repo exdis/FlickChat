@@ -78,6 +78,7 @@ Settings = {
         return { name = name, GetID = function() return 77 end }, { AddInitializer = function() end }
     end,
     RegisterCanvasLayoutSubcategory = function(category, frame) category.frame = frame end,
+    RegisterCanvasLayoutCategory = function(frame, name) return { name = name, frame = frame } end,
     RegisterProxySetting = function(_, variable, kind, name, default, get, set)
         local key = variable:match("_(%a+)$")
         Settings.rows[key] = { tbl = setmetatable({}, { __index = function() return get() end,
@@ -102,6 +103,9 @@ function generic.Show(self) if not self.shown then self.shown = true; if self.sc
 function generic.Hide(self) if self.shown then self.shown = false; if self.scripts.OnHide then self.scripts.OnHide(self) end end end
 function generic.IsShown(self) return self.shown end
 function generic.SetText(self, t) self.text = t end
+function generic.SetShown(self, on) if on then generic.Show(self) else generic.Hide(self) end end
+function generic.SetVerticalScroll(self, v) self.scrolled = v end
+function generic.GetVerticalScroll(self) return self.scrolled or 0 end
 function generic.GetText(self) return self.text end
 function generic.GetStringWidth(self) return #(self.text or "") * 12 end
 function generic.GetStringHeight(self) return 16 end
@@ -359,6 +363,33 @@ Is("with the keyboard as the preview", kb.shown, true)
 generic.Hide(_G.FlickChatNotice)
 Is("closing it puts the preview away", kb.shown, false)
 Is("and it is not shown twice", ns.db.welcomed, true)
+
+-- the settings are a window of the addon's own, worked by the pad; nothing goes on the game's Settings window
+Is("no row on the game's Settings window", next(Settings.rows), nil)
+local listed = Settings.registered
+Is("its name is on the game's AddOns list, a page of its own", listed ~= nil and listed.frame ~= nil, true)
+-- that page shown (the game's cursor picked the name): the settings window opens over it
+listed.frame.IsVisible = function() return true end
+generic.Show(listed.frame)
+local soon = timers[#timers]
+if type(soon) == "function" then soon() end
+local own = _G.FlickChatOptions
+Is("picking it there opens the settings", own ~= nil and own.shown, true)
+generic.Hide(own)
+generic.Hide(listed.frame)
+SlashCmdList.FLICKCHAT("options")
+Is("/flick options opens them too", own.shown, true)
+local was = ns.db.lowercase
+own.scripts.OnGamePadButtonDown(own, "PAD1")
+Is("A flips the first box", ns.db.lowercase == true, not was)
+own.scripts.OnGamePadButtonDown(own, "PAD1")
+local size = ns.db.size
+for _ = 1, 7 do own.scripts.OnGamePadButtonDown(own, "PADDDOWN") end
+own.scripts.OnGamePadButtonDown(own, "PADDRIGHT")
+Is("d-pad down to the size, right adds to it", ns.db.size, size + 5)
+own.scripts.OnGamePadButtonDown(own, "PADDLEFT")
+own.scripts.OnGamePadButtonDown(own, "PAD2")
+Is("B shuts it", own.shown, false)
 
 print(failed == 0 and "all checks passed" or (failed .. " check(s) failed"))
 os.exit(failed == 0 and 0 or 1)

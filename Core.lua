@@ -36,6 +36,14 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
             end
             db.chatChord, db.chatChordOffered = nil, nil
         end
+        -- The same for the button the settings once put on Open Chat: the game's controller mode never reads it.
+        if db.chatKey and not InCombatLockdown() then
+            if GetBindingAction(db.chatKey) == "OPENCHAT" then
+                SetBinding(db.chatKey)
+                SaveBindings(GetCurrentBindingSet())
+            end
+            db.chatKey = nil
+        end
         -- The game's controller mode shows chat's typing line only with the IM chat style: a notice says so.
         db.imStyleTold = nil
         -- Every new player once, in the game's controller mode: the keyboard's size, and the chat style if it
@@ -64,7 +72,7 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
         if db[key] == nil then db[key] = type(value) == "table" and {} or value end
     end
     ns.db = db
-    ns.BuildOptions()
+    if ns.ListOptions then ns.ListOptions() end
     self:RegisterEvent("CHAT_MSG_WHISPER")
     self:RegisterEvent("GAME_PAD_ACTIVE_CHANGED")
     self:RegisterEvent("PLAYER_LOGIN")
@@ -160,7 +168,7 @@ function ns.NeedsIMStyle()
     return controller == true and GetCVar("chatStyle") ~= "im"
 end
 
--- The settings: rows on the game's own Settings window, AddOns tab.
+-- What the settings window (Options.lua) and the first-login notice keep.
 local options = {}
 
 local function HidesBar() return ns.db.hintsToggle == nil or ns.db.hintsToggle == "bar" end
@@ -202,21 +210,7 @@ local ROWS = {
     end },
     wheelSize = { function() return ns.db.wheelSize end, function(value) ns.db.wheelSize = value end },
 }
-
--- On the game's AddOns page: the game's own rows, which its controller cursor steps through (a row is the cursor's
--- stop, its inner controls are not). Check boxes, sliders and buttons only: a drop-down's menu is built by our
--- function and the game refuses its close.
-local function Row(category, key, kind, name, default)
-    return Settings.RegisterProxySetting(category, addonName .. "_" .. key, kind, name, default, ROWS[key][1], ROWS[key][2])
-end
-
-local function Percent(value) return ns.L["SIZE_VALUE"]:format(value) end
-
-local function SizeRow(category, key, name, low, high)
-    local range = Settings.CreateSliderOptions(low, high, 5)
-    range:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, Percent)
-    Settings.CreateSlider(category, Row(category, key, "number", name, 100), range)
-end
+ns.optionRows = ROWS
 
 -- The player's own words for the guesses: letters and apostrophes, a space between, each once.
 function ns.SetMyWords(text)
@@ -243,7 +237,7 @@ local function EditPhrase(button, slot)
         edit = CreateFrame("EditBox", nil, UIParent)
         edit:SetAutoFocus(false)
         edit:SetMaxLetters(120)
-        edit:SetFrameStrata("FULLSCREEN_DIALOG")
+        edit:SetFrameStrata("TOOLTIP")
         edit:SetFontObject(GameFontHighlight)
         edit:SetTextInsets(8, 8, 0, 0)
         local rim = edit:CreateTexture(nil, "BACKGROUND", nil, -2)
@@ -276,128 +270,14 @@ local function EditPhrase(button, slot)
     edit:Show()
     edit:SetFocus()
     edit:HighlightText()
+    return edit
 end
-
-function ns.BuildOptions()
-    if options.category or not (Settings and Settings.RegisterVerticalLayoutCategory) then return end
-    local L = ns.L
-    local category, layout = Settings.RegisterVerticalLayoutCategory(C_AddOns.GetAddOnMetadata(addonName, "Title"))
-    local function Head(text)
-        if CreateSettingsListSectionHeaderInitializer then
-            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
-        end
-    end
-    local function Button(name, text, press, tip)
-        layout:AddInitializer(CreateSettingsButtonInitializer(name, text, press, tip, true))
-    end
-    -- Every check box together, first.
-    Head(L["OPT_HEAD_OPTIONS"])
-    Settings.CreateCheckbox(category, Row(category, "lowercase", "boolean", L["OPT_LOWERCASE"], false))
-    Settings.CreateCheckbox(category, Row(category, "matureFilter", "boolean", L["OPT_MATURE"], false))
-    Settings.CreateCheckbox(category, Row(category, "phraseSend", "boolean", L["OPT_PHRASE_SEND"], true))
-    Settings.CreateCheckbox(category, Row(category, "hideLine", "boolean", L["OPT_HIDE_LINE"], false))
-    Settings.CreateCheckbox(category, Row(category, "hideBar", "boolean", L["OPT_HIDE_BAR"], true))
-    Settings.CreateCheckbox(category, Row(category, "hideGuide", "boolean", L["OPT_HIDE_GUIDE"], true))
-    Settings.CreateCheckbox(category, Row(category, "stickTips", "boolean", L["OPT_STICK_TIPS"], true))
-    Head(L["OPT_HEAD_SIZE"])
-    SizeRow(category, "size", L["OPT_SIZE"], 70, 200)
-    SizeRow(category, "wordRoom", L["OPT_WORD_ROOM"], 70, 160)
-    SizeRow(category, "wheelSize", L["OPT_WHEEL_SIZE"], 50, 150)
-    Button(L["OPT_MOVE"], L["OPT_MOVE_BUTTON"], function(button) ns.MoveNext(button) end, L["OPT_MOVE_TIP"])
-    Head(L["OPT_HEAD_PRACTICE"])
-    Button(L["OPT_PRACTICE"], L["OPT_PRACTICE_BUTTON"], function(button) ns.PracticeNext(button) end, L["OPT_PRACTICE_TIP"])
-    Button(L["OPT_LESSON"], L["OPT_LESSON_BUTTON"], function(button) ns.RunLessonAgain(button) end)
-    Head(L["OPT_HEAD_WORDS"])
-    Button(L["OPT_WORDS"], ns.MyWordsText, function(button) EditPhrase(button, "words") end, L["OPT_WORDS_TIP"])
-    Button(L["OPT_FORGOT"], L["OPT_FORGOT_BUTTON"], function() ns.ForgottenBack() end, L["OPT_FORGOT_TIP"])
-    -- The quick phrases: a row each, its button showing the phrase; pressed, a box over the button takes the typing
-    -- (the game's rows have no text box), by keys or by the keyboard.
-    Head(L["OPT_HEAD_PHRASES"])
-    for slot = 1, 8 do
-        Button(L["PHRASE_SLOT_" .. slot], function() return ns.Phrase(slot) or "" end,
-            function(button) EditPhrase(button, slot) end, L["OPT_PHRASE_TIP"])
-    end
-    Button(L["OPT_PHRASES"], L["OPT_RESET"], function(button)
-        ns.ResetPhrases()
-        -- The phrase rows in sight show the defaults at once: their buttons' text only, the rows are the game's.
-        for _, row in ipairs({ button:GetParent():GetParent():GetChildren() }) do
-            local data = row.data
-            if data and type(data.buttonText) == "function" and row.Button then row.Button:SetText(data.buttonText()) end
-        end
-    end)
-    Head(L["OPT_HEAD_CONTROLLER"])
-    Button(L["OPT_CHAT_KEY"], ns.ChatKeyText, function(button)
-        ns.NextChatKey()
-        button:SetText(ns.ChatKeyText())
-    end, L["OPT_CHAT_KEY_TIP"])
-    Settings.RegisterAddOnCategory(category)
-    options.category = category
-end
-
--- A pad button on the game's own Open Chat binding, the player's pick: a button the bindings leave free, or a
--- modifier the player set on the pad (the buttons standing in for Ctrl, Shift, Alt) with one. It is added beside
--- the keys already there (Enter stays); only a key this addon bound is ever taken off again.
-local MODIFIERS = { { "CTRL", "GamePadEmulateCtrl" }, { "SHIFT", "GamePadEmulateShift" }, { "ALT", "GamePadEmulateAlt" } }
-local FREE_BUTTONS = { "PADSOCIAL", "PADPADDLE1", "PADPADDLE2", "PADPADDLE3", "PADPADDLE4" }
-local CHORD_BUTTONS = { "PADBACK", "PADFORWARD", "PADLSTICK", "PADRSTICK", "PADSOCIAL" }
-
-local function ChatKeys()
-    local list = {}
-    for _, button in ipairs(FREE_BUTTONS) do list[#list + 1] = { key = button, button = button } end
-    for _, mod in ipairs(MODIFIERS) do
-        local pad = GetCVar(mod[2])
-        if pad and pad:find("^PAD") then
-            for _, button in ipairs(CHORD_BUTTONS) do
-                if button ~= pad then list[#list + 1] = { key = mod[1] .. "-" .. button, pad = pad, button = button } end
-            end
-        end
-    end
-    return list
-end
-
-function ns.ChatKeyText()
-    local key = ns.db.chatKey
-    if not key or GetBindingAction(key) ~= "OPENCHAT" then return ns.L["CHAT_KEY_NONE"] end
-    for _, each in ipairs(ChatKeys()) do
-        if each.key == key then
-            local button = GetBindingText(each.button, 1)
-            return each.pad and GetBindingText(each.pad, 1) .. " + " .. button or button
-        end
-    end
-    return GetBindingText(key, 1)
-end
-
--- The next free key after ours takes Open Chat; past the last, none does. Out of combat only.
-function ns.NextChatKey()
-    if InCombatLockdown() then return end
-    local list, now, start = ChatKeys(), ns.db.chatKey, 1
-    for i, each in ipairs(list) do
-        if each.key == now then start = i + 1 end
-    end
-    if now and GetBindingAction(now) == "OPENCHAT" then SetBinding(now) end
-    ns.db.chatKey = nil
-    for i = start, #list do
-        if GetBindingAction(list[i].key) == "" then
-            SetBinding(list[i].key, "OPENCHAT")
-            ns.db.chatKey = list[i].key
-            break
-        end
-    end
-    SaveBindings(GetCurrentBindingSet())
-end
+ns.EditPhrase = EditPhrase
 
 -- The first-time typing lesson comes back the next time the keyboard opens.
 function ns.RunLessonAgain(button)
     ns.db.lessonDone = false
     ns.Tell(ns.L["LESSON_AGAIN"], button)
-end
-
--- Where the settings are, in a chat line. The game's Settings window opened by addon code is ours from then on:
--- its other pages' protected calls are refused, so it is left to the player to open.
-function ns.OpenOptions()
-    if not options.category then return false end
-    ns.Say(ns.L["SETTINGS_WHERE"]:format(C_AddOns.GetAddOnMetadata(addonName, "Title")))
-    return true
 end
 
 -- The notice for a player on the Classic chat style in the game's controller mode: why nothing opens, where the
@@ -663,8 +543,10 @@ function ns.WheelPages()
                 channelTarget = list[i] }
         end
     end
+    -- The addon's own page: its settings window, and the keyboard's place.
+    local own = { { label = L["SETTINGS_SLICE"], settings = true }, { label = L["MOVE_SLICE"], move = true } }
     return { { title = L["WHEEL_TALK"], picks = talk }, { title = L["WHEEL_WHISPERS"], picks = people },
-        { title = L["WHEEL_CHANNELS"], picks = channels } }
+        { title = L["WHEEL_CHANNELS"], picks = channels }, { title = L["TITLE"], picks = own } }
 end
 
 -- Everyone a whisper can reach now, for the name search: battle.net friends by BattleTag and by the character they
@@ -769,7 +651,7 @@ SlashCmdList.FLICKCHAT = function(msg)
     elseif cmd == "phrases" and value == "reset" then
         ns.ResetPhrases()
         ns.Say(ns.L["PHRASES_RESET"])
-    elseif cmd == "phrases" then
+    elseif cmd == "phrases" or cmd == "options" or cmd == "settings" then
         if not ns.OpenOptions() then ns.Say(ns.L["USAGE"]) end
     elseif cmd == "lowercase" then
         db.lowercase = not db.lowercase or nil

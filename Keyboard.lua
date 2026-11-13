@@ -1048,6 +1048,13 @@ WheelStick = function(which, x, y)
         w.at, w.stick = 0, nil
         if pick and not pick.off then
             CloseWheel()
+            if pick.settings then
+                -- Chat shuts first; the window comes once the typing line has let go.
+                Close()
+                return C_Timer.After(0.1, function()
+                    if not (kb and kb:IsShown()) then ns.OpenOptions() end
+                end)
+            end
             return SwitchTo(pick)
         end
         PaintWheel()
