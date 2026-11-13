@@ -1,0 +1,1750 @@
+local _, ns = ...
+local L = ns.L
+local D = ns.Dict
+
+-- The chat box's keyboard on the controller. Each letter is one flick of a stick toward its group (four groups a
+-- stick, straight directions only) and the word list works out the word: the best guess sits highlighted in the
+-- chat box, three more wait on the d-pad. While it is up it takes the controller, so the character stays put.
+
+-- A plain flick types a group's first: . , ? ! on the left stick.
+local SYMBOLS = { ".:;", ",'\"", "?/-", "!()", "1234", "5678", "90+=", "@#%&" }
+-- These close up to the word before and take a space after.
+local ATTACH = { ["."] = true, [","] = true, ["?"] = true, ["!"] = true }
+-- Guess slots by d-pad button; new guesses fill them in this order.
+local SLOT_KEYS = { "PADDUP", "PADDLEFT", "PADDRIGHT", "PADDDOWN" }
+local SLOT_OF = { PADDUP = 1, PADDLEFT = 2, PADDRIGHT = 3, PADDDOWN = 4 }
+
+-- A stick's spring-back past the middle: the opposite way, within 80 ms, and weak. A flick swung straight from one
+-- side to the other (r to y in "trying") goes far past this tilt and counts.
+local SNAPBACK, BOUNCE_PEAK = 0.08, 0.7
+-- Rolled round the rim from one direction into the next (right then up in one move, Skate style): out at RIM, past
+-- TURN degrees from the first direction's middle the first counts and the next begins, once the first had settled
+-- within SETTLED degrees of its middle (a flick landing between two directions only re-aims).
+local RIM, TURN, SETTLED = 0.8, 60, 30
+local DIR_DEGREES = { 90, 0, -90, 180 }
+local HOLD_DELAY, HOLD_REPEAT, DOUBLE_TAP, FLASH = 0.45, 0.25, 0.4, 0.18
+local FLICK_TIP_USES = 30
+-- A pause this long on flicks no whole word fits: the player may think the word done, so say how to spell it.
+local MISSING_PAUSE = 1.2
+-- The first-run lesson types "are you up?" with each box lit ("up" first guesses "to": RT's turn), then the
+-- question mark; its flicks, taken at a light tilt, set the player's own.
+-- The lesson's three lines, word by word: the flicks and punctuation, then words taken off the d-pad, then sending.
+-- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
+local LESSON = { "are", "you", "up", "?", "on", "my", "way", "ty" }
+local LESSON_LINE_END, LESSON_LINE_START = { [4] = true, [7] = true }, { [5] = "LESSON_LINE2", [8] = "LESSON_LINE3" }
+-- A d-pad slot's direction word (DIR_n): up, left, right, down.
+local SLOT_DIR = { 1, 4, 2, 3 }
+local LESSON_ARM, LESSON_MIN_FLICKS, LESSON_FONT = 0.4, 8, 18
+local NAME_GROUP, NAME_KNOWN, NAME_PLACE = 0.002, 0.0003, 0.0005
+
+-- Pixels on a 1080-line screen at size 100.
+local LETTER, GUESS, HINT, CHANNEL_FONT = 18, 18, 13, 14
+-- The button guide is its own box above the keyboard (as the game's controller legend is); R3 shows or hides it,
+-- and a free line over the top right of the whole stack always says so.
+local TOGGLE_GAP = 4
+local NOTHING = {}
+-- The guesses: a d-pad cross of button marks between the two sticks, each word reaching out from its own.
+local CELL_H, HUB_R, DOT, GAP, PAD = 34, 20, 12, 6, 16
+local CROSS_W, CROSS_H, MARK_X, MARK_Y = 250, 104, 18, 16
+-- The middle's width: the room the guess words have, by the settings page's percent.
+local function CrossW() return CROSS_W * (ns.db.wordRoom or 100) / 100 end
+-- A side word too long for its arm shrinks to fit, down to this share of its size; past that it is cut.
+local SIDE_SHRINK = 2 / 3
+-- The letter boxes and their hub: the game's own controller menu art (flat boxes where a client lacks it).
+local BOX_ART, LIT_ART, FOCUS_ART = "gamepad-radialgamemenu-txtbox-default", "gamepad-radialgamemenu-txtbox-selected",
+    "gamepad-radialgamemenu-txtbox-focus"
+local HUB_BG_ART, HUB_ART, DOT_ART = "gamepad-radialgamemenu-ring-bg", "gamepad-radialgamemenu-ring-default",
+    "gamepad-radialgamemenu-cursorbg-neutral"
+-- The box art's bevel, kept unstretched; the lit art's glow reaches this far past the box.
+local BOX_EDGE, LIT_GLOW = 12, 7
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+local DISC = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local YELLOW, BLUE, IDLE = { 0.94, 0.89, 0.26 }, { 0.34, 0.71, 0.91 }, { 0.82, 0.82, 0.82 }
+local LETTER_COLOR = { 1, 1, 1 }
+
+local UTF8_LAST = "[%z\1-\127\194-\244][\128-\191]*$"
+local GetBindingText, GetTime, IsUsingGamepad = _G.GetBindingText, _G.GetTime, _G.IsUsingGamepad
+
+local kb, box
+local S = { committed = "", written = "", flicks = "", guesses = {}, stems = {}, shown = 0, slots = {} }
+local sticks = { Left = { base = 0 }, Right = { base = 4 } }
+sticks.Left.other, sticks.Right.other = sticks.Right, sticks.Left
+local Paint, WheelStick
+
+local function Glyph(key) return GetBindingText(key, 1) end
+
+local function Use(action)
+    local uses = ns.db.uses
+    if (uses[action] or 0) <= FLICK_TIP_USES then uses[action] = (uses[action] or 0) + 1 end
+end
+
+local function Groups() return S.symbols and SYMBOLS or ns.LAYOUTS[ns.db.layout] or ns.LAYOUTS.letters end
+
+local function EndsSentence(text) return text:match("^%s*$") or text:match("[%.!?]%s*$") end
+
+local function PrevLow()
+    if EndsSentence(S.committed) then return "<s>" end
+    local word = S.committed:match("([%a\128-\255']+)[^%a\128-\255']*$")
+    return word and word:lower() or "<s>"
+end
+
+local function Lead()
+    return (S.committed ~= "" and not S.committed:find("[%s%(%[/\"'%-@#]$")) and " " or ""
+end
+
+local function Cap(word)
+    if S.capsLock then return word:upper() end
+    -- Always lowercase: the player's setting, or a dev run's.
+    local lowercase = ns.db.lowercase or (ns.dev and ns.dev.lowercase)
+    if lowercase then word = word:lower() end
+    if S.caps or (not lowercase and EndsSentence(S.committed)) then return (word:gsub("^%l", string.upper)) end
+    return word
+end
+
+-- Flicks no word fits: each group's first letter, so the count still shows.
+local function Fallback()
+    local groups = ns.LAYOUTS[ns.db.layout] or ns.LAYOUTS.letters
+    return (S.flicks:gsub("%d", function(d) return groups[tonumber(d)]:sub(1, 1) end))
+end
+
+-- What the chat box shows: one letter per flick (stems: the likeliest letters so far, RT steps through them).
+local function Word()
+    if S.literal then return S.literal end
+    if S.flicks ~= "" then return S.stems[S.shown] or Fallback() end
+end
+
+local function Show()
+    local word = Word()
+    local pending = word and (Lead() .. Cap(word)) or ""
+    local text = S.committed .. pending
+    S.written = text
+    box:SetText(text)
+    box:SetCursorPosition(#text)
+    if pending ~= "" then box:HighlightText(#S.committed, #text) else box:HighlightText(0, 0) end
+    Paint()
+end
+
+-- Typing outside the keyboard (a key, a linked item) becomes the text; the keyboard's own word is dropped.
+local function Sync()
+    local text = box:GetText()
+    if text == S.written then return end
+    S.committed, S.written, S.flicks, S.literal, S.undo, S.autoSpace = text, text, "", nil, nil, false
+end
+
+-- Whole-word guesses by rank on the d-pad: up, left, right, down.
+local function Place(guesses, stems, shown)
+    S.guesses, S.stems, S.shown = guesses, stems, shown
+    -- The best on top; the longest of the rest at the bottom, where a word has the cross's whole width.
+    local long = 0
+    for i = 2, #guesses do
+        if long == 0 or #guesses[i] > #guesses[long] then long = i end
+    end
+    local side = 2
+    for i = 1, #SLOT_KEYS do S.slots[i] = nil end
+    S.slots[1] = guesses[1]
+    for i = 2, #guesses do
+        if i ~= long then
+            S.slots[side] = guesses[i]
+            side = side + 1
+        end
+    end
+    if long > 0 then S.slots[#SLOT_KEYS] = guesses[long] end
+end
+
+local function WatchMissing(guesses)
+    if S.missTimer then S.missTimer:Cancel() end
+    S.missing, S.missTimer = false, nil
+    if #S.flicks < 2 then return end
+    for _, word in ipairs(guesses) do
+        if D.KeyOf(word) == S.flicks then return end
+    end
+    S.missTimer = C_Timer.NewTimer(MISSING_PAUSE, function()
+        S.missing, S.missTimer = true, nil
+        if kb:IsShown() then Paint() end
+    end)
+end
+
+local function Guess()
+    local guesses = NOTHING
+    if S.flicks ~= "" then
+        local stems
+        guesses, stems = D.Decode(S.flicks, PrevLow())
+        Place(guesses, stems, 1)
+    elseif S.literal then
+        Place({}, {}, 0)
+    else
+        Place(D.Next(PrevLow()), {}, 0)
+    end
+    WatchMissing(guesses)
+end
+
+local function FinishLesson()
+    local peaks = S.lesson.peaks
+    if #peaks >= LESSON_MIN_FLICKS then
+        table.sort(peaks)
+        local arm = math.max(0.4, math.min(0.6, peaks[math.ceil(#peaks / 2)] * 0.7))
+        ns.db.arm, ns.db.rearm = arm, math.max(0.2, math.min(0.3, arm * 0.5))
+    end
+    ns.db.lessonDone, S.lesson = true, nil
+end
+
+-- The lesson's step done: the next one; a line's last word empties the box for the next line.
+local function LessonStep(done)
+    local lesson = S.lesson
+    if not lesson or done:lower() ~= LESSON[lesson.at] then return end
+    -- A line done: the box is emptied for the next.
+    if LESSON_LINE_END[lesson.at] then S.committed, S.autoSpace, S.undo = "", false, nil end
+    -- Past the last word the lesson waits for the send (Send ends it).
+    lesson.at = lesson.at + 1
+end
+
+local function Commit(word, space)
+    local before = S.committed
+    if S.literal then
+        local low = S.literal:lower()
+        ns.db.learned[low] = (ns.db.learned[low] or 0) + 1
+        if S.literal ~= low then ns.db.forms[low] = S.literal end
+        D.Refresh(S.names)
+    end
+    S.committed = before .. Lead() .. Cap(word) .. (space and " " or "")
+    S.undo = { committed = before, flicks = S.flicks, literal = S.literal, shown = S.shown, after = S.committed }
+    S.flicks, S.literal, S.caps, S.autoSpace = "", nil, false, space
+    LessonStep(word)
+end
+
+local function TypeSymbol(c)
+    local word = Word()
+    if word then Commit(word, false) end
+    if ATTACH[c] then
+        if S.autoSpace then S.committed = S.committed:gsub(" $", "") end
+        S.committed = S.committed .. c .. " "
+        S.autoSpace, S.symbols = true, false
+    else
+        S.committed = S.committed .. c
+        S.autoSpace = false
+    end
+    S.undo = nil
+    LessonStep(c)
+    Guess()
+    Show()
+end
+
+local function Flash(digit)
+    local cell = kb.cells[digit]
+    if not cell then return end
+    cell.flashUntil = GetTime() + FLASH
+    C_Timer.After(FLASH + 0.02, function() if kb:IsShown() then Paint() end end)
+end
+
+-- The quick phrases, one per flick direction (1-4 the left stick's up, right, down, left; 5-8 the right's).
+local function PhrasePicks()
+    local picks = {}
+    for slot = 1, 8 do
+        local phrase = ns.Phrase(slot)
+        picks[slot] = phrase and { label = phrase } or nil
+    end
+    return picks
+end
+
+-- The message typed so far, the pending word as the box shows it, trimmed.
+local function Message()
+    local word = Word()
+    local text = S.committed .. (word and (Lead() .. Cap(word)) or "")
+    return text:match("^%s*(.-)%s*$")
+end
+
+local function OpenPhrases()
+    if S.aTimer then S.aTimer:Cancel() end
+    S.aTimer, S.phrases, S.phraseList = nil, true, PhrasePicks()
+    Paint()
+end
+
+local Send
+
+-- Save mode (A held, then X): the message replaces the flicked slot's phrase and the box empties.
+local function SavePhrase(digit)
+    local text = Message()
+    ns.SetPhrase(digit, text)
+    ns.Say(L["PHRASE_SAVED"]:format(L["PHRASE_SLOT_" .. digit], text))
+    S.committed, S.flicks, S.literal, S.undo, S.autoSpace = "", "", nil, nil, false
+    S.phraseSave, S.phraseList = false, PhrasePicks()
+    Flash(digit)
+    Guess()
+    Show()
+end
+
+-- A phrase on an empty line goes at once; with a message under way it joins it as words.
+local function SayPhrase(pick, digit)
+    S.phraseNoText = false
+    if not pick then return end
+    S.phraseUsed = true
+    Flash(digit)
+    Use("phrase")
+    local word = Word()
+    local empty = not word and not S.committed:find("%S")
+    if word then Commit(word, true) end
+    -- As written: "ty" stays "ty" at a sentence's start.
+    local before = S.committed
+    S.committed = before .. Lead() .. pick.label .. " "
+    S.undo = { committed = before, flicks = "", shown = 0, after = S.committed }
+    S.autoSpace = true
+    if empty then return Send() end
+    Guess()
+    Show()
+end
+
+local function SwitchTo(pick, digit)
+    if not pick then return end
+    if pick.naming then
+        local names = ns.WhisperNames()
+        S.naming = { flicks = "", names = names, found = D.MatchNames(names, "") }
+        return Paint()
+    end
+    ns.SwitchChannel(box, pick)
+    Use("channel")
+    if digit then Flash(digit) end
+    Paint()
+end
+
+-- Whispering someone new: flicks spell the name, the d-pad holds the people it fits.
+local function NameFlick(digit)
+    local naming = S.naming
+    naming.flicks = naming.flicks .. digit
+    naming.found = D.MatchNames(naming.names, naming.flicks)
+    Flash(digit)
+    Paint()
+end
+
+local function TakeName(slot)
+    local pick = S.naming.found[slot]
+    if not pick then return end
+    ns.SwitchChannel(box, pick)
+    S.naming = nil
+    Paint()
+end
+
+-- Exact letters: a flick picks a box, the next flick its letter (four letters sit on either stick's directions,
+-- more run on across both).
+local function ExactFlick(digit)
+    if not S.box then
+        S.box = digit
+        Flash(digit)
+        return Paint()
+    end
+    local letters = Groups()[S.box]
+    local i = #letters <= 4 and (digit - 1) % 4 + 1 or digit
+    local c = letters:sub(i, i)
+    if c == "" then return end
+    S.literal, S.box = (S.literal or "") .. c, nil
+    Use("exact")
+    Flash(digit)
+    Guess()
+    Show()
+end
+
+local function Emit(digit)
+    Sync()
+    if S.aDown and not S.phrases then OpenPhrases() end
+    if S.phrases then
+        if S.phraseSave then return SavePhrase(digit) end
+        return SayPhrase(S.phraseList[digit], digit)
+    end
+    if S.symbols then return TypeSymbol(SYMBOLS[digit]:sub(1, 1)) end
+    if S.naming then return NameFlick(digit) end
+    if S.exact then return ExactFlick(digit) end
+    if S.literal then Commit(S.literal, true) end
+    S.flicks = S.flicks .. digit
+    Use("flick")
+    Flash(digit)
+    Guess()
+    Show()
+end
+
+-- /flick sticks: every stick reading and button press for a while and what became of them
+-- (FlickChatDB.stickProbe), so a missed flick or a cut-short hold can be read back. No letters or text.
+local probe
+local PROBE_LINES = 6000
+
+function ns.StartStickProbe(seconds)
+    local now = GetTime()
+    probe = { stop = now + seconds, start = now, lines = {} }
+    ns.db.stickProbe = { arm = ns.db.arm, rearm = ns.db.rearm, lesson = S.lesson ~= nil, lines = probe.lines }
+end
+
+local function Note(text)
+    local now = GetTime()
+    if now > probe.stop or #probe.lines >= PROBE_LINES then
+        probe = nil
+        return
+    end
+    probe.lines[#probe.lines + 1] = string.format("%.3f %s", now - probe.start, text)
+end
+
+local function Dir4(x, y)
+    if math.abs(y) >= math.abs(x) then return y > 0 and 1 or 3 end
+    return x > 0 and 2 or 4
+end
+
+-- On the symbols page a group held with one stick, the other stick picks any of its symbols.
+local function Pick(digit, x, y)
+    Sync()
+    local i = Dir4(x, y)
+    local c = SYMBOLS[digit]:sub(i, i)
+    if c ~= "" then TypeSymbol(c) end
+end
+
+local function Release(st, now)
+    local other = st.other
+    if st.held then
+        st.held = false
+        return Paint()
+    end
+    local dir = st.dir or Dir4(st.px, st.py)
+    local bounce = st.lastDir and (dir - st.lastDir) % 4 == 2 and st.at - st.lastAt < SNAPBACK
+        and st.peak < BOUNCE_PEAK
+    if probe then Note(string.format("release %d peak %.2f %s", st.base + dir, st.peak, bounce and "BOUNCE" or "")) end
+    st.lastDir, st.lastAt = dir, now
+    if not bounce then
+        if S.lesson then table.insert(S.lesson.peaks, st.peak) end
+        if S.symbols and other.out and other.at < st.at then
+            other.held = true
+            Pick(other.base + Dir4(other.px, other.py), st.px, st.py)
+        elseif other.out and other.at < st.at and not other.held then
+            -- the other stick went out first: its letter goes first
+            st.waiting = st.base + dir
+            return
+        else
+            Emit(st.base + dir)
+        end
+    end
+    if other.waiting then
+        local digit = other.waiting
+        other.waiting = nil
+        Emit(digit)
+    end
+end
+
+local function Off(degrees, dir) return math.abs((degrees - DIR_DEGREES[dir] + 180) % 360 - 180) end
+
+-- On the rim: which direction the stick holds, and a roll into the next one counted as a flick of its own.
+local function Roll(st, x, y, len)
+    local degrees, dir = math.deg(math.atan2(y, x)), Dir4(x, y)
+    if not st.dir or (dir ~= st.dir and not st.settled) then
+        st.dir, st.settled = dir, Off(degrees, dir) <= SETTLED
+    elseif dir == st.dir then
+        st.settled = st.settled or Off(degrees, dir) <= SETTLED
+    elseif Off(degrees, st.dir) >= TURN then
+        local now = GetTime()
+        if probe then Note(string.format("roll %d -> %d", st.base + st.dir, st.base + dir)) end
+        Release(st, now)
+        st.at, st.px, st.py, st.peak, st.held = now, x, y, len, false
+        st.dir, st.settled = dir, Off(degrees, dir) <= SETTLED
+    end
+end
+
+local function OnStick(_, which, x, y, len)
+    local st = sticks[which]
+    if not st or not box then return end
+    if S.wheel then return WheelStick(which, x, y) end
+    st.x, st.y = x, y
+    if probe then Note(string.format("%s %.2f %.2f %.2f", which, x, y, len)) end
+    local arm = S.lesson and LESSON_ARM or ns.db.arm
+    local rolling = len >= RIM and not S.symbols and not S.phrases
+    if not st.out then
+        if len >= arm then
+            st.out, st.at, st.px, st.py, st.peak, st.held = true, GetTime(), x, y, len, false
+            st.dir, st.settled = nil, false
+            if S.symbols then Paint() end
+            -- A fast flick can reach the rim on its first reading: that is its direction.
+            if rolling then Roll(st, x, y, len) end
+        end
+    elseif len <= ns.db.rearm then
+        st.out = false
+        Release(st, GetTime())
+    else
+        if len > st.peak then st.px, st.py, st.peak = x, y, len end
+        -- The symbols page holds a group on one stick and the phrases take one flick: no rolls there.
+        if rolling and not st.held then Roll(st, x, y, len) end
+    end
+    local dot = kb.roses[st.base == 0 and 1 or 2].dot
+    dot:SetPoint("CENTER", dot:GetParent(), "CENTER", x * HUB_R, y * HUB_R)
+end
+
+local function Accept()
+    if S.naming then return TakeName(1) end
+    S.symbols = false
+    local word = Word()
+    if word then
+        Commit(word, true)
+        Use("take")
+    elseif S.autoSpace and S.committed:find("[%w\128-\255'] $") then
+        -- a second space in a row ends the sentence
+        S.committed, S.autoSpace = (S.committed:gsub(" $", ". ")), false
+    else
+        S.committed, S.autoSpace = S.committed .. " ", false
+        Use("space")
+    end
+    Guess()
+    Show()
+end
+
+local function DeleteLast(text)
+    local link = text:match(".*()|c%x%x%x%x%x%x%x%x|H")
+    if link and text:sub(link):match("^|c%x+|H.-|h.-|h|r$") then return text:sub(1, link - 1) end
+    return (text:gsub(UTF8_LAST, ""))
+end
+
+local function Undo()
+    if S.naming then
+        S.naming.flicks = S.naming.flicks:sub(1, -2)
+        S.naming.found = D.MatchNames(S.naming.names, S.naming.flicks)
+        return Paint()
+    end
+    if S.box then
+        S.box = nil
+        return Paint()
+    end
+    if S.literal then
+        S.literal = S.literal:gsub(UTF8_LAST, "")
+        if S.literal == "" then S.literal = nil end
+        Use("undo")
+    elseif S.flicks ~= "" then
+        S.flicks = S.flicks:sub(1, -2)
+        Use("undo")
+    elseif S.undo and S.undo.after == S.committed then
+        local u = S.undo
+        S.committed, S.flicks, S.literal, S.undo, S.autoSpace = u.committed, u.flicks, u.literal, nil, false
+        Guess()
+        if u.flicks ~= "" then S.shown = math.max(1, math.min(u.shown, #S.stems)) end
+        return Show()
+    else
+        S.committed = DeleteLast(S.committed)
+        Use("delete")
+    end
+    S.autoSpace = false
+    Guess()
+    Show()
+end
+
+local function DeleteWord()
+    if probe then Note(string.format("delete word (box %s, naming %s)", tostring(box ~= nil), tostring(S.naming ~= nil))) end
+    if not box or S.naming then return end
+    Sync()
+    if Word() then
+        S.flicks, S.literal = "", nil
+    else
+        local text = S.committed:gsub("%s+$", "")
+        if text:find("|h|r$") then
+            S.committed = DeleteLast(text)
+        else
+            S.committed = text:gsub("[^%s]*$", "")
+        end
+    end
+    S.undo, S.autoSpace = nil, false
+    Guess()
+    Show()
+end
+
+local function StopHold()
+    if S.holdTimer then S.holdTimer:Cancel() end
+    if S.holdTicker then S.holdTicker:Cancel() end
+    S.holdTimer, S.holdTicker = nil, nil
+end
+
+local function StartHold()
+    StopHold()
+    S.holdTimer = C_Timer.NewTimer(HOLD_DELAY, function()
+        S.holdTimer = nil
+        if probe then Note("hold fired") end
+        DeleteWord()
+        S.holdTicker = C_Timer.NewTicker(HOLD_REPEAT, DeleteWord)
+    end)
+end
+
+local function NextGuess()
+    if S.flicks == "" or #S.stems < 2 then return end
+    S.shown = S.shown % #S.stems + 1
+    Use("next")
+    Show()
+end
+
+local function TakeSlot(slot)
+    if S.naming then return TakeName(slot) end
+    local word = S.slots[slot]
+    if not word then return end
+    Commit(word, true)
+    Use("slot")
+    Guess()
+    Show()
+end
+
+local function Capital()
+    local now = GetTime()
+    if S.capsLock then
+        S.capsLock, S.caps = false, false
+    elseif S.caps and now - (S.lastCap or 0) < DOUBLE_TAP then
+        S.capsLock, S.caps = true, false
+    else
+        S.caps = not S.caps
+    end
+    S.lastCap = now
+    Show()
+end
+
+local function Reset(text)
+    S.committed, S.written, S.flicks, S.literal = text, text, "", nil
+    S.guesses, S.stems, S.shown, S.slots, S.undo = {}, {}, 0, {}, nil
+    S.autoSpace, S.caps, S.capsLock, S.symbols, S.wheel = false, false, false, false, nil
+    S.exact, S.box, S.naming, S.phrases, S.aDown = false, nil, nil, false, false
+    S.phraseSave, S.phraseNoText = false, false
+    for _, st in pairs(sticks) do st.out, st.held, st.waiting, st.lastDir = false, false, nil, nil end
+end
+
+Send = function()
+    if S.lesson then
+        local last = S.lesson.at == #LESSON and (Word() or ""):lower() == LESSON[#LESSON]
+        if last or S.lesson.at > #LESSON then
+            FinishLesson()
+            Reset("")
+            box:SetText("")
+            ns.Say(L["LESSON_DONE"])
+            Guess()
+        end
+        return Show()
+    end
+    local word = Word()
+    if word then Commit(word, false) end
+    local text = S.committed:gsub("%s+$", "")
+    if ns.dev and ns.dev.Send and ns.dev.Send(text) then
+        box:SetText("")
+        Reset("")
+        Guess()
+        return Show()
+    end
+    box:SetText(text)
+    S.written = text
+    if text:find("%S") then ns.Learn(text) end
+    if S.lesson then FinishLesson() end
+    Use("send")
+    local enter = box:GetScript("OnEnterPressed")
+    if enter then enter(box) end
+    if box then
+        Reset(box:GetText())
+        Guess()
+        Show()
+    end
+end
+
+local function ClearAll()
+    if S.naming then
+        S.naming = nil
+        return Paint()
+    end
+    S.committed, S.flicks, S.literal, S.undo, S.autoSpace = "", "", nil, nil, false
+    Use("clear")
+    Guess()
+    Show()
+end
+
+local function Close()
+    if S.naming then
+        S.naming = nil
+        return Paint()
+    end
+    -- In a fight the game refuses a chat box's focus dropped by addon code (its controller state stays on chat):
+    -- the keyboard steps back and the pad is the game's again, whose own Back shuts chat.
+    if box.chatFrame and InCombatLockdown() then
+        if not S.fightTold then
+            S.fightTold = true
+            ns.Say(L["FIGHT_CLOSE"]:format(Glyph("PAD2")))
+        end
+        return ns.Shut()
+    end
+    local escape = box:GetScript("OnEscapePressed")
+    if escape then escape(box) end
+end
+
+-- The channel wheel: Y opens it over the keyboard and it works as the game's own Menu wheel does: point either stick
+-- at a slice, let the stick go to pick it, LB and RB turn the page, Y or B closes it. The game's wheel art.
+local WHEEL_SCALE, SLICE_OUT = 0.7, 150
+-- Past this (squared) a stick points at a slice; back under this it picks it (the game's own wheel's numbers).
+local POINT_SQ, LETGO_SQ = 0.25, 0.04
+local OFF_COLOR, PICK_COLOR = { 0.45, 0.45, 0.45 }, { 1, 1, 1 }
+local wheel
+
+-- Slice i's direction: 1 at the top, then clockwise.
+local function SliceAngle(i) return math.rad(90 - (i - 1) * 45) end
+
+local function WheelArt(texture, atlas, size, color)
+    if C_Texture.GetAtlasInfo(atlas) then
+        texture:SetAtlas(atlas, true)
+    else
+        texture:SetTexture(DISC)
+        texture:SetSize(size, size)
+        texture:SetVertexColor(color[1], color[2], color[3], color[4])
+    end
+end
+
+local function BuildWheel()
+    wheel = CreateFrame("Frame", nil, kb)
+    -- Never past the screen's edge: a keyboard low on the screen pushes the wheel up.
+    wheel:SetClampedToScreen(true)
+    wheel:SetFrameLevel(kb:GetFrameLevel() + 20)
+
+    wheel:SetSize(560, 640)
+    wheel:SetPoint("CENTER", kb, "CENTER")
+    wheel.shade = wheel:CreateTexture(nil, "BACKGROUND", nil, -2)
+    wheel.shade:SetAllPoints(kb)
+    wheel.shade:SetColorTexture(0, 0, 0, 0.7)
+    -- The wheel art is see-through between its slices: a dark disc behind it keeps what is under it out.
+    wheel.back = wheel:CreateTexture(nil, "BACKGROUND", nil, -1)
+    wheel.back:SetTexture(DISC)
+    wheel.back:SetVertexColor(0.02, 0.02, 0.03, 0.88)
+    wheel.bg = wheel:CreateTexture(nil, "BACKGROUND")
+    WheelArt(wheel.bg, "gamepad-radial-menu-wheelbg", 520, { 0.08, 0.08, 0.09, 0.95 })
+    wheel.bg:SetPoint("CENTER", 0, 20)
+    wheel.back:SetPoint("CENTER", wheel.bg, "CENTER")
+    wheel.back:SetSize(500, 500)
+    wheel.lit = wheel:CreateTexture(nil, "ARTWORK")
+    WheelArt(wheel.lit, "gamepad-radial-menu-selected", 160, { YELLOW[1], YELLOW[2], YELLOW[3], 0.35 })
+    wheel.slices = {}
+    for i = 1, 8 do
+        local angle = SliceAngle(i)
+        local x, y = math.cos(angle) * SLICE_OUT, math.sin(angle) * SLICE_OUT
+        local off = wheel:CreateTexture(nil, "BORDER")
+        WheelArt(off, "gamepad-radial-menu-disabled", 160, { 0, 0, 0, 0.5 })
+        off:SetPoint("CENTER", wheel.bg, "CENTER", x, y)
+        off:SetRotation(angle - math.rad(270))
+        local label = wheel:CreateFontString(nil, "OVERLAY")
+        label:SetFont(STANDARD_TEXT_FONT, 18, "OUTLINE")
+        label:SetSize(130, 48)
+        label:SetWordWrap(true)
+        label:SetPoint("CENTER", wheel.bg, "CENTER", x, y)
+        wheel.slices[i] = { off = off, label = label, x = x, y = y, angle = angle }
+    end
+    wheel.title = wheel:CreateFontString(nil, "OVERLAY")
+    wheel.title:SetFont(STANDARD_TEXT_FONT, 24, "OUTLINE")
+    wheel.title:SetTextColor(YELLOW[1], YELLOW[2], YELLOW[3])
+    wheel.title:SetPoint("CENTER", wheel.bg, "CENTER", 0, 12)
+    wheel.page = wheel:CreateFontString(nil, "OVERLAY")
+    wheel.page:SetFont(STANDARD_TEXT_FONT, 18, "OUTLINE")
+    wheel.page:SetPoint("TOP", wheel.title, "BOTTOM", 0, -8)
+    wheel.info = wheel:CreateFontString(nil, "OVERLAY")
+    wheel.info:SetFont(STANDARD_TEXT_FONT, 18, "OUTLINE")
+    wheel.info:SetTextColor(YELLOW[1], YELLOW[2], YELLOW[3])
+    wheel.info:SetPoint("TOPLEFT", wheel.bg, "BOTTOMLEFT", 0, -6)
+    wheel.info:SetPoint("TOPRIGHT", wheel.bg, "BOTTOMRIGHT", 0, -6)
+    wheel.info:SetWordWrap(true)
+    wheel:Hide()
+end
+
+local function PaintWheel()
+    local w = S.wheel
+    local picks = w.pages[w.page].picks
+    for i, slice in ipairs(wheel.slices) do
+        local pick = picks[i]
+        slice.label:SetText(pick and pick.label or "")
+        local color = (not pick or pick.off) and OFF_COLOR or ns.IsChannel(box, pick) and YELLOW or PICK_COLOR
+        slice.label:SetTextColor(color[1], color[2], color[3])
+        slice.off:SetShown(pick ~= nil and pick.off == true)
+    end
+    local lit = w.at > 0 and picks[w.at]
+    if w.at > 0 then
+        local slice = wheel.slices[w.at]
+        wheel.lit:ClearAllPoints()
+        wheel.lit:SetPoint("CENTER", wheel.bg, "CENTER", slice.x, slice.y)
+        wheel.lit:SetRotation(slice.angle - math.rad(270))
+        wheel.lit:SetDesaturated(not lit or lit.off == true)
+    end
+    wheel.lit:SetShown(w.at > 0)
+    wheel.title:SetText(w.pages[w.page].title)
+    wheel.page:SetText(("%s  %d / %d  %s"):format(Glyph("PADLSHOULDER"), w.page, #w.pages, Glyph("PADRSHOULDER")))
+    if lit then
+        wheel.info:SetText(L[lit.off and "WHEEL_OFF" or "WHEEL_LETGO"]:format(lit.label))
+    else
+        wheel.info:SetText(L["HINT_WHEEL"]:format(Glyph("PAD4"), Glyph("PAD2")))
+    end
+end
+
+local function OpenWheel()
+    -- Channels are a chat box's: none while a settings box is typed in.
+    if not box.chatFrame then return end
+    if not wheel then BuildWheel() end
+    local pages, page = ns.WheelPages(), 1
+    for p, each in ipairs(pages) do
+        for _, pick in ipairs(each.picks) do
+            if not pick.naming and ns.IsChannel(box, pick) then page = p end
+        end
+    end
+    S.wheel = { pages = pages, page = page, at = 0 }
+    wheel:SetScale(WHEEL_SCALE * (ns.db.wheelSize or 100) / 100)
+    for _, st in pairs(sticks) do st.out, st.held, st.waiting = false, false, nil end
+    if SOUNDKIT and SOUNDKIT.GAMEPAD_RADIAL_MENU_OPEN then PlaySound(SOUNDKIT.GAMEPAD_RADIAL_MENU_OPEN) end
+    wheel:Show()
+    PaintWheel()
+    Paint()
+end
+
+local function CloseWheel()
+    S.wheel = nil
+    if wheel then wheel:Hide() end
+    if box then Paint() end
+end
+
+WheelStick = function(which, x, y)
+    local w = S.wheel
+    local sq = x * x + y * y
+    if sq > POINT_SQ then
+        local degrees = math.deg(math.atan2(y, x))
+        local i = math.floor(((90 - degrees) % 360 + 22.5) / 45) % 8 + 1
+        w.stick = which
+        if w.at ~= i then
+            w.at = i
+            if SOUNDKIT and SOUNDKIT.GAMEPAD_RADIAL_MENU_HIGHLIGHT then PlaySound(SOUNDKIT.GAMEPAD_RADIAL_MENU_HIGHLIGHT) end
+            PaintWheel()
+        end
+    elseif sq < LETGO_SQ and w.stick == which and w.at > 0 then
+        local pick = w.pages[w.page].picks[w.at]
+        w.at, w.stick = 0, nil
+        if pick and not pick.off then
+            CloseWheel()
+            return SwitchTo(pick)
+        end
+        PaintWheel()
+    end
+end
+
+local function WheelPress(button)
+    local w = S.wheel
+    if button == "PADLSHOULDER" or button == "PADRSHOULDER" then
+        w.page = (w.page + (button == "PADRSHOULDER" and 1 or -1) - 1) % #w.pages + 1
+        w.at, w.stick = 0, nil
+        PaintWheel()
+    elseif button == "PAD4" or button == "PAD2" then
+        CloseWheel()
+    end
+end
+
+-- View held: the pad's buttons go to the game until it is let go, so LB and RB flip the chat tabs by the game's own
+-- keys (a tab shown by our code is refused). No bumper while it was down: it was a tap, which clears the line.
+local function HoldView()
+    if kb.viewHold then return end
+    local hold = { bumper = false }
+    kb.viewHold = hold
+    kb:EnableGamePadButton(false)
+    local function Index(binding) return C_GamePad.ButtonBindingToIndex(binding) or -1 end
+    local view, left, right = Index("PADBACK"), Index("PADLSHOULDER"), Index("PADRSHOULDER")
+    local base
+    hold.ticker = C_Timer.NewTicker(0.03, function()
+        local state = C_GamePad.GetDeviceMappedState()
+        local buttons = state and state.buttons
+        -- the buttons list starts at 0 or 1: whichever shows View down on the first look
+        if buttons and base == nil then base = buttons[view] and 0 or buttons[view + 1] and 1 or nil end
+        if buttons and base and buttons[view + base] then
+            hold.bumper = hold.bumper or buttons[left + base] or buttons[right + base] or false
+            return
+        end
+        hold.ticker:Cancel()
+        kb.viewHold = nil
+        if kb:IsShown() then
+            kb:EnableGamePadButton(true)
+            if not hold.bumper and box then ClearAll() end
+        end
+    end)
+end
+
+local function Press(button)
+    if not box then return end
+    Sync()
+    if S.wheel then return WheelPress(button) end
+    if button == "PADRTRIGGER" then
+        Accept()
+    elseif button == "PADLTRIGGER" and S.phraseSave then
+        S.phraseSave = false
+        Paint()
+    elseif button == "PADLTRIGGER" then
+        Undo()
+        StartHold()
+    elseif button == "PADRSHOULDER" then
+        NextGuess()
+    elseif button == "PADLSHOULDER" then
+        S.exact, S.box = not S.exact, nil
+        if S.exact and S.flicks ~= "" then S.literal, S.flicks = Word(), "" end
+        Use("exact")
+        Guess()
+        Show()
+    elseif SLOT_OF[button] then
+        TakeSlot(SLOT_OF[button])
+    elseif button == "PADRSTICK" then
+        ns.db.guideOff = not ns.db.guideOff or nil
+        Paint()
+    elseif button == "PADLSTICK" then
+        Capital()
+    elseif button == "PAD3" and S.aDown then
+        -- A held, then X: the next flick saves the message as that slot's phrase.
+        if not S.phrases then OpenPhrases() end
+        local typed = Message() ~= ""
+        S.phraseSave, S.phraseNoText = typed, not typed
+        Paint()
+    elseif button == "PAD3" then
+        S.symbols = not S.symbols
+        Use(S.symbols and "symbols" or "letters")
+        Paint()
+    elseif button == "PAD4" and S.lesson then
+        FinishLesson()
+        Paint()
+    elseif button == "PAD4" then
+        OpenWheel()
+    elseif button == "PAD1" then
+        -- Tap: send. Held (or a flick while down): the quick phrases.
+        S.aDown, S.phraseUsed = true, false
+        if S.aTimer then S.aTimer:Cancel() end
+        S.aTimer = C_Timer.NewTimer(HOLD_DELAY, function()
+            S.aTimer = nil
+            if S.aDown and box then OpenPhrases() end
+        end)
+    elseif button == "PADBACK" then
+        HoldView()
+    elseif button == "PAD2" then
+        if ns.dev and ns.dev.Stopped then ns.dev.Stopped() end
+        Close()
+    end
+end
+
+local function Unpress(button)
+    if button == "PADLTRIGGER" then
+        StopHold()
+    elseif button == "PAD1" and S.aDown then
+        local tapped = S.aTimer ~= nil
+        if S.aTimer then S.aTimer:Cancel() end
+        S.aDown, S.aTimer = false, nil
+        if S.phrases then
+            S.phrases, S.phraseSave, S.phraseNoText = false, false, false
+            if box then Paint() end
+        elseif tapped and box then
+            Send()
+        end
+    end
+end
+
+-- Paint: the roses' groups (or a held group's letters round the other stick), the guess slots and the hint.
+
+
+local function GroupText(text)
+    if S.capsLock or S.caps then return text:upper() end
+    return text
+end
+
+local function Holding(st) return S.symbols and st.out end
+
+local function PaintRose(rose, st)
+    local groups = Groups()
+    local holder = st.other
+    local picking = Holding(holder) and groups[holder.base + Dir4(holder.px, holder.py)]
+    local latched = S.exact and S.box and groups[S.box]
+    local now, lit = GetTime(), S.lesson and S.lesson.next
+    local ring = S.phrases and S.phraseList or nil
+    for dir, cell in ipairs(rose.cells) do
+        local digit = st.base + dir
+        local pick = ring and ring[digit]
+        if rose.wheel ~= (ring ~= nil) then
+            cell.text:SetFont(STANDARD_TEXT_FONT, ring and CHANNEL_FONT or LETTER, "OUTLINE")
+        end
+        if ring then
+            cell.text:SetText(pick and pick.label or "")
+        elseif latched then
+            local i = #latched <= 4 and dir or digit
+            cell.text:SetText(GroupText(latched:sub(i, i)))
+        else
+            cell.text:SetText(picking and "" or GroupText(groups[digit]))
+        end
+        local gold = (cell.flashUntil or 0) > now or digit == lit
+        cell.lit:SetShown(gold)
+        cell.focus:SetShown(not gold and Holding(st) and Dir4(st.px, st.py) == dir)
+        local color = gold and YELLOW or LETTER_COLOR
+        cell.text:SetTextColor(color[1], color[2], color[3])
+    end
+    rose.wheel = ring ~= nil
+    for i, label in ipairs(rose.picks) do
+        local c = ""
+        if picking then
+            if #picking <= 4 then
+                if i % 2 == 1 then c = picking:sub((i + 1) / 2, (i + 1) / 2) end
+            else
+                c = picking:sub(i, i)
+            end
+            if S.capsLock or S.caps then c = c:upper() end
+        end
+        label:SetText(c)
+    end
+end
+
+-- The lesson's line for where the player is now, and the box to light (lesson.next).
+local function LessonText()
+    local lesson = S.lesson
+    local target = LESSON[lesson.at]
+    lesson.next = nil
+    if not target then return L["LESSON_SEND"]:format(LESSON[#LESSON], Glyph("PAD1")) end
+    if target == "?" then
+        if not S.symbols then return L["LESSON_PUNCT"]:format(Glyph("PAD3")) end
+        lesson.next = 3
+        return L["LESSON_PUNCT_FLICK"]
+    end
+    local key = D.KeyOf(target)
+    if key:sub(1, #S.flicks) ~= S.flicks then return L["LESSON_WRONG"]:format(Glyph("PADLTRIGGER")) end
+    local shown = (Word() or ""):lower()
+    local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
+    intro = intro and L[intro] .. "\n" or ""
+    -- From the second line on: a word already over the d-pad is taken there.
+    if lesson.at > 4 then
+        for slot = 1, #SLOT_KEYS do
+            if (S.slots[slot] or ""):lower() == target and (#S.flicks > 0 or lesson.at < #LESSON) then
+                return intro .. L["LESSON_DPAD"]:format(target, L["DIR_" .. SLOT_DIR[slot]])
+            end
+        end
+    end
+    if lesson.at == #LESSON and shown == target and #S.flicks == #key then
+        return L["LESSON_SEND"]:format(target, Glyph("PAD1"))
+    end
+    if #S.flicks < #key then
+        local i = #S.flicks + 1
+        local digit = tonumber(key:sub(i, i))
+        lesson.next = digit
+        local line = L["LESSON_FLICK"]:format(target, target:sub(i, i), Groups()[digit],
+            L[digit <= 4 and "STICK_LEFT" or "STICK_RIGHT"], L["DIR_" .. ((digit - 1) % 4 + 1)])
+        if lesson.at == 1 and i == 1 then return L["LESSON_START"] .. "\n" .. line end
+        if intro ~= "" then return intro .. line end
+        if shown ~= target:sub(1, #S.flicks) then
+            return L["LESSON_GUESSING"]:format(Word(), Groups()[tonumber(key:sub(i - 1, i - 1))]) .. "\n" .. line
+        end
+        return line
+    end
+    if shown ~= target then return L["LESSON_NEXT"]:format(Word(), Glyph("PADRSHOULDER"), target) end
+    return L["LESSON_TAKE"]:format(target, Glyph("PADRTRIGGER"))
+end
+
+-- The line over the legend: what to do right now.
+local function Hint()
+    if S.lesson then return LessonText() .. "\n" .. L["LESSON_SKIP_LINE"]:format(Glyph("PAD4")) end
+    if S.wheel then return "" end
+    if S.phrases then
+        if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
+        if S.phraseNoText then return L["PHRASE_NEED_TEXT"]:format(Glyph("PAD1"), Glyph("PAD3")) end
+        return L["HINT_PHRASES"]:format(Glyph("PAD3"), Glyph("PAD1"))
+    end
+    if S.naming then
+        if S.naming.flicks ~= "" and #S.naming.found == 0 then return L["NAMING_NONE"] end
+        return L["HINT_NAMING"]
+    end
+    if S.symbols then return L["HINT_SYMBOLS"] end
+    if S.exact then return S.box and L["HINT_EXACT_PICK"] or L["HINT_EXACT"] end
+    -- Flicks no word fits show each box's first letter: say so, or it reads as the keyboard making junk.
+    if S.flicks ~= "" and #S.stems == 0 then return L["NO_WORD"] end
+    if S.missing then return L["HINT_MISSING"] end
+    -- Mid-word, until the player has kept a good few: one flick per letter, never the same box over and over.
+    if S.flicks ~= "" and (ns.db.uses.take or 0) < FLICK_TIP_USES then return L["HINT_NEXT"] end
+    if not Word() and (ns.db.uses.flick or 0) < FLICK_TIP_USES then return L["HINT_FLICK"] end
+    return ""
+end
+
+-- Every button with the game's own icon. The guide box (R3 hides it) holds the shoulders as the pad holds them, each
+-- hand's trigger over its bumper over its middle button; the face buttons sit in a bar under the chat line, where
+-- the game's controller mode keeps its own chat buttons. Menu stays the game's; A sends.
+local COLUMNS = { { "PADLTRIGGER", "PADLSHOULDER", "PADBACK" }, { "PADRTRIGGER", "PADRSHOULDER" } }
+local FACE = { "PAD1", "PAD3", "PAD4", "PAD2" }
+local ON_BAR = { PAD1 = true, PAD3 = true, PAD4 = true, PAD2 = true }
+-- The bar: its height, the room inside its ends, and between two buttons.
+-- The guide, the bar and the hints line draw at the game's own interface scale with its own numbers, so they read
+-- as its controller legend (GamepadPersistentInputLegend: 18 px icons, 24 px rows, 20 px margins) and its chat
+-- buttons (24 px icons, the label 4 px on) do: GameFontNormal throughout.
+local GUIDE_ICON, GUIDE_ROW, GUIDE_EDGE, GUIDE_COL = 18, 24, 20, 24
+local BAR_ICON, BAR_H, BAR_PAD, BAR_GAP, LABEL_GAP = 24, 34, 10, 16, 4
+local labels = {}
+
+local function Labels()
+    labels.PADLSHOULDER = S.exact and L["GUESSING"] or L["EXACT"]
+    labels.PADLTRIGGER, labels.PADBACK = L["ERASE"], L["CLEAR"]
+    -- RB names the reading it would put in the box next.
+    local upNext = S.flicks ~= "" and #S.stems >= 2 and S.stems[S.shown % #S.stems + 1]
+    labels.PADRSHOULDER = upNext and L["NEXT_IS"]:format(Cap(upNext)) or L["NEXT"]
+    labels.PADRTRIGGER = L["KEEP"]
+    labels.PAD4 = S.lesson and L["LESSON_SKIP"] or L["CHANNEL"]
+    labels.PAD3 = S.phrases and L["SAVE_PHRASE"] or S.symbols and L["LETTERS"] or L["SYMBOLS"]
+    labels.PAD2, labels.PAD1 = L["CLOSE"], L["SEND_PHRASES"]
+    -- A settings box: A saves what is typed, B leaves it as it was; no channels there.
+    if box and not box.chatFrame then
+        labels.PAD1, labels.PAD2, labels.PAD4 = L["SAVE"], L["CANCEL"], ""
+    end
+    return labels
+end
+
+-- The icon inside the game's own text for a button, at its 64 px size when there is one; plain text when none.
+local function SetIcon(prompt, key)
+    local text = GetBindingText(key, 1) or ""
+    if prompt.glyph == text then return end
+    prompt.glyph = text
+    local atlas, file = text:match("|A:([^:|]+)"), text:match("|T([^:|]+)")
+    if atlas then
+        local big = atlas:gsub("_%d+$", "_64")
+        prompt.icon:SetAtlas(C_Texture.GetAtlasInfo(big) and big or atlas)
+    elseif file then
+        prompt.icon:SetTexture(file)
+    end
+    prompt.icon:SetShown(atlas ~= nil or file ~= nil)
+    prompt.plain = not (atlas or file) and text or nil
+    prompt.text = nil
+end
+
+local function PlacePrompt(prompt, parent, x, y)
+    prompt.icon:ClearAllPoints()
+    prompt.icon:SetPoint("CENTER", parent, "BOTTOMLEFT", x, y)
+    prompt.label:ClearAllPoints()
+    prompt.label:SetPoint("LEFT", prompt.icon, "RIGHT", LABEL_GAP, 0)
+end
+
+-- The guide's columns as wide as their longest label; the bar's buttons one after another.
+local function PlacePrompts()
+    local P = kb.prompts
+    -- RB's label changes with every flick: it keeps room for a longish reading so nothing else moves.
+    local rt = P.PADRSHOULDER
+    local now = rt.label:GetText()
+    rt.label:SetText(L["NEXT_IS"]:format(string.rep("w", 6)))
+    rt.width = math.ceil(rt.label:GetUnboundedStringWidth())
+    rt.label:SetText(now)
+    rt.label:SetWidth(rt.width)
+    rt.label:SetJustifyH("LEFT")
+    local function Widest(keys)
+        local most = 0
+        for _, key in ipairs(keys) do most = math.max(most, P[key].width or P[key].label:GetStringWidth()) end
+        return most
+    end
+    local x2 = GUIDE_EDGE + GUIDE_ICON + LABEL_GAP + Widest(COLUMNS[1]) + GUIDE_COL
+    -- the game's own box height for three rows: its last row's spare room comes off the bottom margin
+    local height = GUIDE_ROW * 3 + GUIDE_EDGE * 2 - (GUIDE_ROW - GUIDE_ICON)
+    kb.guide:SetSize(x2 + GUIDE_ICON + LABEL_GAP + Widest(COLUMNS[2]) + GUIDE_EDGE, height)
+    for c, keys in ipairs(COLUMNS) do
+        for row, key in ipairs(keys) do
+            PlacePrompt(P[key], kb.guide, (c == 1 and GUIDE_EDGE or x2) + GUIDE_ICON / 2,
+                height - GUIDE_EDGE - (row - 1) * GUIDE_ROW - GUIDE_ICON / 2)
+        end
+    end
+    local x = BAR_PAD
+    for _, key in ipairs(FACE) do
+        -- A button with nothing to say here is left off the bar.
+        local used = P[key].text ~= ""
+        P[key].icon:SetAlpha(used and 1 or 0)
+        if used then
+            PlacePrompt(P[key], kb.bar, x + BAR_ICON / 2, BAR_H / 2)
+            x = x + BAR_ICON + LABEL_GAP + P[key].label:GetStringWidth() + BAR_GAP
+        end
+    end
+    kb.bar:SetSize(x - BAR_GAP + BAR_PAD, BAR_H)
+end
+
+local function PaintPrompts()
+    -- R3 hides the hints picked on the settings page: both (the default), the bar or the guide alone.
+    local reach = ns.db.hintsToggle or "both"
+    kb.guide:SetShown(not (ns.db.guideOff and (reach == "both" or reach == "guide")))
+    -- Under a settings box the bar always shows: it is the only word on how to save or leave.
+    kb.bar:SetShown((box ~= nil and not box.chatFrame) or not (ns.db.guideOff and (reach == "both" or reach == "bar")))
+    local toggle = kb.toggle
+    SetIcon(toggle, "PADRSTICK")
+    local text = L[ns.db.guideOff and "HINTS_SHOW" or "HINTS_HIDE"]
+    if toggle.plain then text = toggle.plain .. " " .. text end
+    toggle.label:SetText(text)
+    -- Over the guide while it shows above the keyboard, else over the keyboard itself.
+    local over = (not kb.guide:IsShown() or kb.guideCorner) and kb or kb.guide
+    -- Its mirror on the left: the left stick press, a capital (twice, all capitals).
+    local caps = kb.capsTip
+    SetIcon(caps, "PADLSTICK")
+    local capsText = L[S.capsLock and "CAPS_LOCKED" or "CAPS_TIP"]
+    if caps.plain then capsText = caps.plain .. " " .. capsText end
+    caps.label:SetText(capsText)
+    if toggle.over ~= over then
+        toggle.label:ClearAllPoints()
+        toggle.label:SetPoint("BOTTOMRIGHT", over, "TOPRIGHT", -6, TOGGLE_GAP)
+        -- The label is what stands on the line, as the right one's does; the icon hangs on it.
+        caps.label:ClearAllPoints()
+        caps.label:SetPoint("BOTTOMLEFT", over, "TOPLEFT", 6 + GUIDE_ICON + LABEL_GAP, TOGGLE_GAP)
+        toggle.over = over
+    end
+    -- Both reminders go with the player's box on the settings page.
+    local tips = not ns.db.stickTipsOff
+    toggle.label:SetShown(tips)
+    toggle.icon:SetShown(tips and toggle.plain == nil)
+    caps.label:SetShown(tips)
+    caps.icon:SetShown(tips and caps.plain == nil)
+    local moved = kb.promptsMoved
+    for key, text in pairs(Labels()) do
+        local prompt = kb.prompts[key]
+        SetIcon(prompt, key)
+        if prompt.plain then text = prompt.plain .. " " .. text end
+        if prompt.text ~= text then
+            moved = moved or not prompt.width or (prompt.text == "") ~= (text == "")
+            prompt.label:SetText(text)
+            prompt.text = text
+        end
+    end
+    if moved then PlacePrompts() end
+    kb.promptsMoved = false
+end
+
+local function Layout()
+    kb:SetHeight(PAD + kb.bodyH + PAD)
+end
+
+Paint = function()
+    if not kb or not box then return end
+    local text = Hint()
+    PaintRose(kb.roses[1], sticks.Left)
+    PaintRose(kb.roses[2], sticks.Right)
+    local shown = (Word() or ""):lower()
+    local list = S.naming and S.naming.found
+    for i, slot in ipairs(kb.slots) do
+        local entry = (list or NOTHING)[i]
+        local word = entry and entry.label or not list and S.slots[i]
+        slot:SetText(word and (entry and word or Cap(word)) or "")
+        if slot.room then
+            local size = GUESS
+            local width = slot:GetStringWidth()
+            if width > slot.room then size = math.max(math.floor(GUESS * SIDE_SHRINK), math.floor(GUESS * slot.room / width)) end
+            if slot.size ~= size then
+                slot:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+                slot.size = size
+            end
+        end
+        local lit
+        if entry then
+            lit = S.naming and i == 1
+        else
+            lit = word and word:lower() == shown
+        end
+        local color = lit and YELLOW or IDLE
+        slot:SetTextColor(color[1], color[2], color[3])
+        kb.marks[i]:SetAlpha(word and 1 or 0.35)
+    end
+    PaintPrompts()
+    local size = S.lesson and LESSON_FONT or HINT
+    if kb.hintSize ~= size then
+        kb.hint:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+        kb.hintSize = size
+    end
+    -- Under the window, and gone with the hints the player hid; the lesson's lines always show.
+    kb.hint:SetText(text ~= "" and (S.lesson or not ns.db.guideOff) and text or nil)
+    Layout()
+end
+
+-- Built once; sizes in 1080-line pixels, the frame's scale doing the rest.
+
+local function Disc(parent, layer, size, color, alpha)
+    local t = parent:CreateTexture(nil, layer)
+    t:SetTexture(DISC)
+    t:SetSize(size, size)
+    t:SetVertexColor(color[1], color[2], color[3], alpha)
+    t:SetPoint("CENTER")
+    return t
+end
+
+-- A box piece in the game's art, its bevel kept as the box stretches; a flat color where the client lacks the art.
+local function BoxArt(texture, atlas, color)
+    if C_Texture.GetAtlasInfo(atlas) then
+        texture:SetAtlas(atlas)
+        texture:SetTextureSliceMargins(BOX_EDGE, BOX_EDGE, BOX_EDGE, BOX_EDGE)
+        texture:SetTextureSliceMode(Enum.UITextureSliceMode.Stretched)
+    else
+        texture:SetColorTexture(color[1], color[2], color[3], color[4])
+    end
+end
+
+local function HubArt(texture, atlas, size, color)
+    if C_Texture.GetAtlasInfo(atlas) then
+        texture:SetAtlas(atlas)
+    else
+        texture:SetTexture(DISC)
+        texture:SetVertexColor(color[1], color[2], color[3], color[4])
+    end
+    texture:SetSize(size, size)
+    texture:SetPoint("CENTER")
+    return texture
+end
+
+local function Rose(index)
+    local rose = CreateFrame("Frame", nil, kb)
+    rose.cells, rose.picks = {}, {}
+    rose.hub = CreateFrame("Frame", nil, rose)
+    rose.hub:SetSize(HUB_R * 2, HUB_R * 2)
+    rose.hub:SetPoint("CENTER")
+    HubArt(rose.hub:CreateTexture(nil, "BACKGROUND"), HUB_BG_ART, HUB_R * 2 + 6, { 0.1, 0.1, 0.11, 0.95 })
+    HubArt(rose.hub:CreateTexture(nil, "BORDER"), HUB_ART, HUB_R * 2, { 0.2, 0.2, 0.22, 1 })
+    rose.dot = HubArt(rose.hub:CreateTexture(nil, "OVERLAY"), DOT_ART, DOT, { YELLOW[1], YELLOW[2], YELLOW[3], 1 })
+    for dir = 1, 4 do
+        local cell = CreateFrame("Frame", nil, rose)
+        cell.fill = cell:CreateTexture(nil, "BACKGROUND")
+        cell.fill:SetAllPoints()
+        BoxArt(cell.fill, BOX_ART, { 0.13, 0.13, 0.15, 0.85 })
+        cell.lit = cell:CreateTexture(nil, "BORDER")
+        cell.lit:SetPoint("TOPLEFT", -LIT_GLOW, LIT_GLOW)
+        cell.lit:SetPoint("BOTTOMRIGHT", LIT_GLOW, -LIT_GLOW)
+        BoxArt(cell.lit, LIT_ART, { YELLOW[1], YELLOW[2], YELLOW[3], 0.35 })
+        cell.lit:Hide()
+        cell.focus = cell:CreateTexture(nil, "BORDER")
+        cell.focus:SetPoint("TOPLEFT", -LIT_GLOW, LIT_GLOW)
+        cell.focus:SetPoint("BOTTOMRIGHT", LIT_GLOW, -LIT_GLOW)
+        BoxArt(cell.focus, FOCUS_ART, { BLUE[1], BLUE[2], BLUE[3], 0.35 })
+        cell.focus:Hide()
+        cell.text = cell:CreateFontString(nil, "ARTWORK")
+        cell.text:SetPoint("CENTER")
+        kb.cells[(index - 1) * 4 + dir] = cell
+        rose.cells[dir] = cell
+    end
+    for i = 1, 8 do
+        rose.picks[i] = rose:CreateFontString(nil, "OVERLAY")
+    end
+    return rose
+end
+
+function ns.Restyle()
+    if not kb then return end
+    local size = (ns.db.size or 100) / 100
+    kb:SetScale(768 / 1080 * size / UIParent:GetEffectiveScale())
+    local font = STANDARD_TEXT_FONT
+    local widest = 0
+    kb.measure:SetFont(font, LETTER, "OUTLINE")
+    for _, set in ipairs({ ns.LAYOUTS[ns.db.layout] or ns.LAYOUTS.letters, SYMBOLS }) do
+        for _, letters in ipairs(set) do
+            kb.measure:SetText(letters:upper())
+            widest = math.max(widest, kb.measure:GetStringWidth())
+        end
+    end
+    local cellW = math.ceil(widest) + 20
+    local reachX, reachY = HUB_R + 6 + cellW / 2, HUB_R + 4 + CELL_H / 2
+    local roseW, roseH = 2 * (HUB_R + 6 + cellW), 2 * (HUB_R + 4 + CELL_H)
+    kb.roseH, kb.bodyH = roseH, math.max(roseH, CROSS_H)
+    kb.baseW = PAD * 2 + roseW * 2 + CrossW() + GAP * 2
+    kb:SetWidth(kb.baseW)
+    local middle = -(PAD + kb.bodyH / 2)
+    local spots = { { 0, reachY }, { reachX, 0 }, { 0, -reachY }, { -reachX, 0 } }
+    for i, rose in ipairs(kb.roses) do
+        rose:SetSize(roseW, roseH)
+        rose:ClearAllPoints()
+        rose:SetPoint("CENTER", kb, "TOP", (i == 1 and -1 or 1) * (CrossW() / 2 + GAP + roseW / 2), middle)
+        for dir, cell in ipairs(rose.cells) do
+            cell:SetSize(cellW, CELL_H)
+            cell:SetPoint("CENTER", rose, "CENTER", spots[dir][1], spots[dir][2])
+            cell.text:SetFont(font, S.phrases and CHANNEL_FONT or LETTER, "OUTLINE")
+            cell.text:SetTextColor(LETTER_COLOR[1], LETTER_COLOR[2], LETTER_COLOR[3])
+            cell.text:SetWidth(cellW - 6)
+            cell.text:SetWordWrap(false)
+        end
+        for k, label in ipairs(rose.picks) do
+            local angle = math.rad((k - 1) * 45)
+            label:SetFont(font, LETTER + 4, "OUTLINE")
+            label:SetTextColor(1, 1, 1)
+            label:SetPoint("CENTER", rose, "CENTER", math.sin(angle) * (reachX + 4), math.cos(angle) * (reachY + 4))
+        end
+    end
+    local markSpots = { { 0, MARK_Y }, { -MARK_X, 0 }, { MARK_X, 0 }, { 0, -MARK_Y } }
+    -- each word's anchor on its mark, the mark's side it reaches from, and how far
+    local reach = { { "BOTTOM", "TOP", 0, 2 }, { "RIGHT", "LEFT", -6, 0 }, { "LEFT", "RIGHT", 6, 0 },
+        { "TOP", "BOTTOM", 0, -2 } }
+    for i, slot in ipairs(kb.slots) do
+        local mark = kb.marks[i]
+        mark:SetFont(font, GUESS, "")
+        mark:SetText(Glyph(SLOT_KEYS[i]))
+        mark:ClearAllPoints()
+        mark:SetPoint("CENTER", kb, "TOP", markSpots[i][1], middle + markSpots[i][2])
+        slot:SetFont(font, GUESS, "OUTLINE")
+        slot.size = GUESS
+        slot:ClearAllPoints()
+        -- Up and down have the cross's whole width; a side word its half past the mark.
+        local width = (i == 1 or i == 4) and CrossW() or CrossW() / 2 - MARK_X - 10
+        slot:SetWidth(width)
+        slot.room = (i == 2 or i == 3) and width or nil
+        slot:SetJustifyH(i == 2 and "RIGHT" or i == 3 and "LEFT" or "CENTER")
+        slot:SetPoint(reach[i][1], mark, reach[i][2], reach[i][3], reach[i][4])
+        slot:SetWordWrap(false)
+    end
+    kb.hint:SetFont(font, HINT, "OUTLINE")
+    kb.hintSize = HINT
+    for _, piece in ipairs({ kb.guide, kb.bar, kb.hints }) do
+        piece:SetIgnoreParentScale(true)
+        piece:SetScale(UIParent:GetEffectiveScale())
+    end
+    for key, prompt in pairs(kb.prompts) do
+        local size = ON_BAR[key] and BAR_ICON or GUIDE_ICON
+        prompt.icon:SetSize(size, size)
+        prompt.label:SetFontObject(GameFontNormal)
+        prompt.text = nil
+    end
+    kb.promptsMoved = true
+    local toggle = kb.toggle
+    toggle.icon:SetSize(GUIDE_ICON, GUIDE_ICON)
+    toggle.icon:ClearAllPoints()
+    toggle.icon:SetPoint("RIGHT", toggle.label, "LEFT", -LABEL_GAP, 0)
+    -- Free over the game world: outlined, no backing.
+    toggle.label:SetFontObject(GameFontNormal)
+    toggle.glyph, toggle.over = nil, nil
+    local caps = kb.capsTip
+    caps.icon:SetSize(GUIDE_ICON, GUIDE_ICON)
+    caps.icon:ClearAllPoints()
+    caps.icon:SetPoint("RIGHT", caps.label, "LEFT", -LABEL_GAP, 0)
+    caps.label:SetFontObject(GameFontNormal)
+    caps.glyph = nil
+    kb.hint:ClearAllPoints()
+    kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -4)
+    kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
+    if box then Paint() end
+end
+
+function ns.Relayout()
+    if D.Built() then D.SetLayout(ns.db.layout) end
+    ns.Restyle()
+    if kb and box then
+        S.flicks = ""
+        Guess()
+        Show()
+    end
+end
+
+-- The game's controller mode puts its own chat buttons under the box (what the game would do with A, X, Y, B) and
+-- LB/RB marks on the chat tabs. While the keyboard is up those buttons are ours: the pieces hide (each kept hidden if
+-- the game shows it again) and come back as the keyboard goes, when the game still has them up.
+local TAB_HINT_ICON, TAB_HINT_OUT = 16, 4
+local stepAside = setmetatable({}, { __mode = "k" })
+local watched = setmetatable({}, { __mode = "k" })
+
+local function StepAside(piece, owner)
+    if not piece or not owner or piece:IsForbidden() then return end
+    stepAside[piece] = owner
+    if not watched[piece] then
+        watched[piece] = true
+        piece:HookScript("OnShow", function(self)
+            if kb and kb:IsShown() and stepAside[self] then self:Hide() end
+        end)
+    end
+    piece:Hide()
+end
+
+local function GameChatButtons(edit)
+    local footer = edit.chatFrame and edit.chatFrame.footer
+    StepAside(footer and footer.inputLegend, footer)
+    local dock = GENERAL_CHAT_DOCK
+    StepAside(dock and dock.LeftTabHint, dock and dock.footer)
+    StepAside(dock and dock.RightTabHint, dock and dock.footer)
+    -- In their places: View with the bumper, the pair that flips the tabs while typing.
+    local hints = kb.tabHints
+    if not hints then
+        hints = {}
+        kb.tabHints = hints
+        for i = 1, 4 do
+            hints[i] = { icon = kb.hints:CreateTexture(nil, "OVERLAY") }
+            hints[i].icon:SetSize(TAB_HINT_ICON, TAB_HINT_ICON)
+        end
+    end
+    local game = dock ~= nil and InputUtil ~= nil and InputUtil.IsGamepadUIEnabled()
+    for i, key in ipairs({ "PADBACK", "PADLSHOULDER", "PADBACK", "PADRSHOULDER" }) do
+        local hint = game and (i <= 2 and dock.LeftTabHint or dock.RightTabHint)
+        local icon = hints[i].icon
+        if hint and not hint:IsForbidden() then
+            SetIcon(hints[i], key)
+            icon:ClearAllPoints()
+            icon:SetPoint("CENTER", hint, "CENTER",
+                (i % 2 == 1 and -1 or 1) * TAB_HINT_ICON / 2 + (i <= 2 and -TAB_HINT_OUT or TAB_HINT_OUT), 0)
+        else
+            icon:Hide()
+        end
+    end
+end
+
+-- The game's controller legend (its top left box) names what its own buttons would do: while typing, the guide
+-- takes its corner and it steps aside. Outside the game's controller mode the guide sits over the keyboard.
+local LEGEND_OWNER = { isShown = true }
+
+local function PlaceGuide()
+    local legend = GamepadPersistentInputLegend
+    kb.guide:ClearAllPoints()
+    kb.guideCorner = legend ~= nil and not legend:IsForbidden() and legend:IsShown()
+        and InputUtil ~= nil and InputUtil.IsGamepadUIEnabled()
+    if kb.guideCorner then
+        kb.guide:SetPoint("TOPLEFT", legend, "TOPLEFT", 0, 0)
+        StepAside(legend, LEGEND_OWNER)
+    else
+        kb.guide:SetPoint("BOTTOMLEFT", kb, "TOPLEFT", 0, 4)
+    end
+    kb.toggle.over = nil
+end
+
+local function GameChatButtonsBack()
+    for piece, owner in pairs(stepAside) do
+        stepAside[piece] = nil
+        if owner.isShown then piece:Show() end
+    end
+end
+
+-- A dark backing in the game's dialog border, as its controller legend box is drawn.
+local function Dress(frame)
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetPoint("TOPLEFT", 4, -4)
+    bg:SetPoint("BOTTOMRIGHT", -4, 4)
+    bg:SetColorTexture(0.03, 0.03, 0.04, 0.92)
+    if NineSliceUtil and NineSliceLayouts and NineSliceLayouts.Dialog then
+        NineSliceUtil.ApplyLayoutByName(frame, "Dialog")
+    end
+end
+
+ns.Dress = Dress
+
+local function Build()
+    kb = CreateFrame("Frame", "FlickChatKeyboard", UIParent)
+    kb:SetFrameStrata("DIALOG")
+    kb:SetClampedToScreen(true)
+    kb:EnableMouse(true)
+    kb:Hide()
+    Dress(kb)
+    kb.guide = CreateFrame("Frame", nil, kb)
+    kb.guide:SetClampedToScreen(true)
+    kb.guide:SetPoint("BOTTOMLEFT", kb, "TOPLEFT", 0, 4)
+    Dress(kb.guide)
+    kb.measure = kb:CreateFontString(nil, "ARTWORK")
+    kb.measure:SetAlpha(0)
+    kb.cells, kb.roses, kb.slots = {}, {}, {}
+    kb.roses[1], kb.roses[2] = Rose(1), Rose(2)
+    kb.marks = {}
+    for i = 1, #SLOT_KEYS do
+        kb.slots[i] = kb:CreateFontString(nil, "ARTWORK")
+        kb.marks[i] = kb:CreateFontString(nil, "ARTWORK")
+    end
+    kb.hint = kb:CreateFontString(nil, "ARTWORK")
+    kb.hint:SetTextColor(1, 0.82, 0)
+    kb.bar = CreateFrame("Frame", nil, kb)
+    kb.bar:SetClampedToScreen(true)
+    local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
+    slot:SetAllPoints()
+    local edge = kb.bar:CreateTexture(nil, "BORDER")
+    edge:SetAllPoints()
+    if C_Texture.GetAtlasInfo("gamepad-footer-slot-bg") then
+        slot:SetAtlas("gamepad-footer-slot-bg")
+        edge:SetAtlas("gamepad-footer-slot-frameneutral")
+    else
+        slot:SetColorTexture(0.03, 0.03, 0.04, 0.92)
+    end
+    kb.prompts = {}
+    for key in pairs(Labels()) do
+        local parent = ON_BAR[key] and kb.bar or kb.guide
+        local prompt = { icon = parent:CreateTexture(nil, "ARTWORK"), label = parent:CreateFontString(nil, "ARTWORK") }
+        prompt.label:SetWordWrap(false)
+        kb.prompts[key] = prompt
+    end
+    kb.hints = CreateFrame("Frame", nil, kb)
+    kb.hints:SetAllPoints(kb)
+    kb.toggle = { icon = kb.hints:CreateTexture(nil, "ARTWORK"), label = kb.hints:CreateFontString(nil, "ARTWORK") }
+    kb.capsTip = { icon = kb.hints:CreateTexture(nil, "ARTWORK"), label = kb.hints:CreateFontString(nil, "ARTWORK") }
+    kb.hint:SetJustifyH("LEFT")
+    kb.hint:SetWordWrap(true)
+    kb:SetScript("OnGamePadStick", OnStick)
+    kb:SetScript("OnGamePadButtonDown", function(_, button)
+        if probe then Note("down " .. button) end
+        Press(button)
+    end)
+    kb:SetScript("OnGamePadButtonUp", function(_, button)
+        if probe then Note("up " .. button) end
+        Unpress(button)
+    end)
+    -- The controller is the keyboard's while it shows: no walking, jumping or casting under the typing.
+    kb:SetScript("OnShow", function(self)
+        if chatProbe then ChatNote("keyboard shown by " .. Caller()) end
+        self:EnableGamePadButton(not self.viewHold)
+        self:EnableGamePadStick(true)
+    end)
+    kb:SetScript("OnHide", function(self)
+        if chatProbe then ChatNote("keyboard hidden by " .. Caller()) end
+        self:EnableGamePadButton(false)
+        self:EnableGamePadStick(false)
+        StopHold()
+        S.wheel = nil
+        box = nil
+        GameChatButtonsBack()
+    end)
+    ns.Restyle()
+end
+
+local function Names()
+    local names = {}
+    local function Add(name, chance)
+        if type(name) ~= "string" or (issecretvalue and issecretvalue(name)) then return end
+        name = name:match("^[^%-%s]+")
+        if name and (names[name] or 0) < chance then names[name] = chance end
+    end
+    local unit = IsInRaid() and "raid" or "party"
+    for i = 1, GetNumGroupMembers() do Add(UnitName(unit .. i), NAME_GROUP) end
+    Add(UnitName("target"), NAME_GROUP)
+    for _, name in ipairs(ns.whispers) do Add(name, NAME_GROUP) end
+    if C_FriendList and C_FriendList.GetNumFriends then
+        for i = 1, C_FriendList.GetNumFriends() do
+            local info = C_FriendList.GetFriendInfoByIndex(i)
+            Add(info and info.name, NAME_KNOWN)
+        end
+    end
+    if IsInGuild and IsInGuild() and GetNumGuildMembers then
+        for i = 1, GetNumGuildMembers() do Add((GetGuildRosterInfo(i)), NAME_KNOWN) end
+    end
+    for word in ((GetZoneText() or "") .. " " .. (GetSubZoneText() or "")):gmatch("[%a\128-\255']+") do
+        Add(word, NAME_PLACE)
+    end
+    for _, class in pairs(LOCALIZED_CLASS_NAMES_MALE or {}) do Add(class, NAME_PLACE) end
+    return names
+end
+
+-- Beside the chat box on the side with more room, bottoms level.
+local function PlaceBy(edit)
+    kb:ClearAllPoints()
+    local x = edit:GetCenter()
+    local left = x and x * edit:GetEffectiveScale() < UIParent:GetWidth() * UIParent:GetEffectiveScale() / 2
+    if left then
+        kb:SetPoint("BOTTOMLEFT", edit, "BOTTOMRIGHT", 12, 0)
+    else
+        kb:SetPoint("BOTTOMRIGHT", edit, "BOTTOMLEFT", -12, 0)
+    end
+end
+
+-- /flick chatprobe: for a while, every chat focus change and keyboard show or hide with the code that caused it,
+-- plus the focus and shown state whenever it changes (FlickChatDB.chatProbe). No text is kept.
+local chatProbe
+
+local function ChatNote(text)
+    if not chatProbe then return end
+    local lines = chatProbe.lines
+    if #lines < 2000 then lines[#lines + 1] = string.format("%.2f %s", GetTime() - chatProbe.start, text) end
+end
+
+local function Caller()
+    return ((debugstack(3, 5, 0) or ""):gsub("Interface/AddOns/", ""):gsub("\n", " | "))
+end
+
+local function ChatState()
+    local focus = GetCurrentKeyBoardFocus()
+    local name = not focus and "none" or focus:IsForbidden() and "forbidden" or focus:GetName() or "unnamed"
+    local edit = ChatFrame1EditBox
+    return ("focus %s; chat 1 shown %s; its edit box shown %s, alpha %.2f; keyboard %s"):format(name,
+        tostring(ChatFrame1 and ChatFrame1:IsShown()), tostring(edit and edit:IsShown()),
+        edit and edit:GetAlpha() or -1, tostring(kb ~= nil and kb:IsShown()))
+end
+
+function ns.StartChatProbe(seconds)
+    if chatProbe then chatProbe.ticker:Cancel() end
+    local now = GetTime()
+    chatProbe = { start = now, lines = {}, last = "" }
+    ns.db.chatProbe = chatProbe.lines
+    local ui = InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()
+    ChatNote(("start: game controller UI %s, using the pad %s"):format(tostring(ui), tostring(IsUsingGamepad())))
+    chatProbe.ticker = C_Timer.NewTicker(0.1, function()
+        if GetTime() - now > seconds then
+            chatProbe.ticker:Cancel()
+            ChatNote("end")
+            chatProbe = nil
+            return
+        end
+        local state = ChatState()
+        if state ~= chatProbe.last then
+            chatProbe.last = state
+            ChatNote(state)
+        end
+    end)
+end
+
+-- What a dev addon (never shipped) needs to drive the keyboard through its own handlers. ns.dev, when a dev addon
+-- sets it: lowercase (lines typed in lowercase), Send(text) (true: the line was taken, nothing is sent),
+-- Opened() and Stopped().
+function ns.DevTools()
+    return { OnStick = OnStick, Press = Press, Unpress = Unpress, Word = Word, PrevLow = PrevLow, Guess = Guess,
+        state = S, dict = D, slotKeys = SLOT_KEYS, dirDegrees = DIR_DEGREES,
+        Keyboard = function() return kb end, Box = function() return box end }
+end
+
+local function Open(edit)
+    if not kb then Build() end
+    D.Build()
+    box = edit
+    S.names = Names()
+    D.Refresh(S.names)
+    Reset(edit:GetText())
+    S.lesson = not ns.db.lessonDone and { at = 1, peaks = {} } or nil
+    ns.Restyle()
+    PlaceBy(edit)
+    kb.bar:ClearAllPoints()
+    kb.bar:SetPoint("TOPLEFT", edit, "BOTTOMLEFT", 0, -2)
+    -- As the game's own chat buttons: held on screen, and where that pushes it up into the chat, behind the chat.
+    local chat = edit.chatFrame or edit:GetParent()
+    if not edit.chatFrame then
+        kb.bar:SetFrameStrata("TOOLTIP")
+    elseif chat and not chat:IsForbidden() then
+        kb.bar:SetFrameStrata(chat:GetFrameStrata())
+        kb.bar:SetFrameLevel(math.max(0, chat:GetFrameLevel() - 1))
+    end
+    -- Over a settings box it stands above the game's controller cursor, which marks the window under it.
+    kb:SetFrameStrata(edit.chatFrame and "DIALOG" or "TOOLTIP")
+    kb:Show()
+    GameChatButtons(edit)
+    PlaceGuide()
+    Guess()
+    Show()
+    if ns.dev and ns.dev.Opened then ns.dev.Opened() end
+end
+
+function ns.Shut()
+    if kb then kb:Hide() end
+end
+
+-- Each chat box: the keyboard comes with its typing focus while the controller is in use, and goes with it. Focus,
+-- not showing: with the IM chat style the box never hides, it only fades.
+local edits = {}
+
+-- IM style leaves an unused typing line faded in sight; with the player's box ticked it goes out of sight, as
+-- Classic style's does. Alpha only: showing or hiding a chat box from our code is refused in controller mode.
+local IM_FADED = 0.35
+
+local function FadeLine(edit)
+    if edit:HasFocus() or GetCVar("chatStyle") ~= "im" then return end
+    edit:SetAlpha(ns.db.hideLine and 0 or IM_FADED)
+end
+
+function ns.FadeLines()
+    for edit in pairs(edits) do
+        if edit.chatFrame then FadeLine(edit) end
+    end
+end
+
+local function Watch(edit)
+    edits[edit] = true
+    edit:HookScript("OnEditFocusGained", function()
+        if chatProbe then ChatNote(("%s gained focus (pad %s) by %s"):format(edit:GetName() or "box",
+            tostring(IsUsingGamepad()), Caller())) end
+        if ns.db.enabled and IsUsingGamepad() and box ~= edit then Open(edit) end
+    end)
+    edit:HookScript("OnEditFocusLost", function()
+        if edit.chatFrame then C_Timer.After(0, function() FadeLine(edit) end) end
+        if chatProbe then ChatNote(("%s lost focus by %s"):format(edit:GetName() or "box", Caller())) end
+        if box == edit then ns.Shut() end
+    end)
+end
+
+ns.Watch = Watch
+
+-- The controller picked up while a chat box has focus: the keyboard comes up then.
+function ns.PadActive(active)
+    if not active or not ns.db.enabled or box then return end
+    local focus = GetCurrentKeyBoardFocus()
+    if focus and edits[focus] then Open(focus) end
+end
+
+function ns.Ready()
+    for i = 1, NUM_CHAT_WINDOWS or 10 do
+        local edit = _G["ChatFrame" .. i .. "EditBox"]
+        if edit then Watch(edit) end
+    end
+    if ns.db.hideLine then ns.FadeLines() end
+    -- A tab picked shows its own typing line faded again: after the game's pick, ours go out of sight once more.
+    if FCFDock_SelectWindow then
+        hooksecurefunc("FCFDock_SelectWindow", function() C_Timer.After(0, ns.FadeLines) end)
+    end
+end
