@@ -1,0 +1,71 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker is for **FlickChat**: its folder is `FlickChat` and its options are in the game's Options, on the AddOns tab, under FlickChat.
+  - type: textarea
+    id: report
+    attributes:
+      label: What happened?
+      description: What you saw and what you expected instead. Say what you were typing and which buttons you pressed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: What you opened and pressed, in order.
+      placeholder: |
+        1. Open chat with the controller
+        2. Flick ...
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller
+      description: Xbox, PlayStation, Steam Deck or another one.
+    validations:
+      required: true
+  - type: dropdown
+    id: style
+    attributes:
+      label: Chat style
+      description: The game's Options, Social, Chat Style.
+      options:
+        - "IM style"
+        - "Classic style"
+        - "I do not know"
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: Lua errors
+      description: |
+        If the game showed an error, paste the first one here. To see errors, type `/console scriptErrors 1`, or install BugSack and BugGrabber (both are needed).
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: A screenshot or a short clip helps more than anything. Drag it into this box.
+    validations:
+      required: false
+  - type: dropdown
+    id: alone
+    attributes:
+      label: Does it still happen with only this addon turned on?
+      description: Turn everything else off in the addon list, restart the interface and try once more.
+      options:
+        - "Yes, it still happens with only this addon on"
+        - "No, it goes away with the rest turned off (say which one above if you found it)"
+        - "I have no other addons"
+        - "I did not try"
+    validations:
+      required: true
