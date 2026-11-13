@@ -385,6 +385,7 @@ function ns.StyleNotice()
         note:SetText(L["NOTICE_SIZE_NOTE"])
         -- The hide-line box, X at the end of its line.
         local check = CreateFrame("CheckButton", "FlickChatNoticeCheck", notice, "UICheckButtonTemplate")
+        check:Hide()
         check:SetPoint("TOPLEFT", note, "BOTTOMLEFT", -4, -10)
         check:SetScript("OnClick", function(self)
             ROWS.hideLine[2](self:GetChecked() == true)
