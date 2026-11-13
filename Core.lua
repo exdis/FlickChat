@@ -1,7 +1,11 @@
 local addonName, ns = ...
 
--- Strings: each locale file fills its own; a missing one shows English, never its key.
-ns.L = setmetatable({}, { __index = function(_, key) return ns.EN and ns.EN[key] or key end })
+-- Strings: each locale file fills its own table and ns.locale picks one; a missing one shows English, never its key.
+ns.locales, ns.locale = {}, GetLocale()
+ns.L = setmetatable({}, { __index = function(_, key)
+    local own = ns.locales[ns.locale]
+    return own and own[key] or ns.EN and ns.EN[key] or key
+end })
 
 -- learned: word -> times sent; pairs: "word next" -> times ("<s>" starts a message); forms: a word's own capitals;
 -- uses: how often each hint's action was used (a hint goes once learned); arm/rearm: a flick's tilt out and back;
@@ -96,6 +100,8 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
         if db[key] == nil then db[key] = type(value) == "table" and {} or value end
     end
     ns.db = db
+    -- the dev addon's /fcdev locale: the addon as on another language's game
+    if db.devLocale then ns.locale = db.devLocale end
     if ns.ListOptions then ns.ListOptions() end
     self:RegisterEvent("CHAT_MSG_WHISPER")
     self:RegisterEvent("GAME_PAD_ACTIVE_CHANGED")

@@ -1,6 +1,6 @@
 local _, ns = ...
-if GetLocale() ~= "itIT" then return end
-local L = ns.L
+local L = {}
+ns.locales.itIT = L
 
 L["TITLE"] = "Chat col controller"
 L["ON"] = "attivata: la tastiera del controller si apre con la casella della chat mentre usi un controller."

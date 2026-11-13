@@ -1,6 +1,6 @@
 local _, ns = ...
-if GetLocale() ~= "frFR" then return end
-local L = ns.L
+local L = {}
+ns.locales.frFR = L
 
 L["TITLE"] = "Discussion à la manette"
 L["ON"] = "activé : le clavier manette s'ouvre avec la zone de discussion pendant que vous utilisez une manette."

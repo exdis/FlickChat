@@ -1,7 +1,6 @@
 local _, ns = ...
-local locale = GetLocale()
-if locale ~= "esES" and locale ~= "esMX" then return end
-local L = ns.L
+local L = {}
+ns.locales.esES, ns.locales.esMX = L, L
 
 L["TITLE"] = "Chat con mando"
 L["ON"] = "activado: el teclado del mando se abre con la caja de chat mientras usas un mando. /flick lo desactiva."

@@ -1,6 +1,6 @@
 local _, ns = ...
-if GetLocale() ~= "deDE" then return end
-local L = ns.L
+local L = {}
+ns.locales.deDE = L
 
 L["TITLE"] = "Gamepad-Chat"
 L["ON"] = "an: Die Controller-Tastatur öffnet sich mit dem Chatfeld, während du einen Controller benutzt."

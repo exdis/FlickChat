@@ -502,5 +502,33 @@ Is("a search from an item's page never changes the window", sets, 0)
 Is("and the results still go out", query.searchString, "wool")
 focus = nil
 
+-- every language's strings: none English lacks, and the same %s and %d in the same order as English's
+local function Blanks(text)
+    local out = {}
+    for blank in text:gsub("%%%%", ""):gmatch("%%[%d%.%-]*%a") do out[#out + 1] = blank end
+    return table.concat(out, " ")
+end
+local codes = {}
+for code in pairs(ns.locales) do codes[#codes + 1] = code end
+table.sort(codes)
+Is("the other languages are loaded", #codes >= 5, true)
+for _, code in ipairs(codes) do
+    local wrong = {}
+    for key, text in pairs(ns.locales[code]) do
+        if ns.EN[key] == nil then
+            wrong[#wrong + 1] = key .. " (not in English)"
+        elseif Blanks(text) ~= Blanks(ns.EN[key]) then
+            wrong[#wrong + 1] = key .. " (" .. Blanks(text) .. " for " .. Blanks(ns.EN[key]) .. ")"
+        end
+    end
+    table.sort(wrong)
+    Is(code .. ": strings fit English's", table.concat(wrong, ", "), "")
+    -- as on that language's game: its own text where it has one, English where it has none
+    ns.locale = code
+    Is(code .. ": its title shows", ns.L.TITLE, ns.locales[code].TITLE or ns.EN.TITLE)
+end
+ns.locale = "enUS"
+Is("English shows English", ns.L.TITLE, ns.EN.TITLE)
+
 print(failed == 0 and "all checks passed" or (failed .. " check(s) failed"))
 os.exit(failed == 0 and 0 or 1)
