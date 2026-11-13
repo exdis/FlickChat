@@ -446,5 +446,61 @@ focus = nil
 seek()
 Is("and gone when the game takes the focus away", kb.shown, false)
 
+-- the auction house's search: the game's box is never written; the search is asked of the game directly
+local query
+local written = 0
+AuctionHouseFrame = Obj(UIParent)
+local searchBox = Obj(AuctionHouseFrame)
+searchBox.shown = true
+function searchBox.SetText() written = written + 1 end
+function searchBox.IsObjectType(_, kind) return kind == "EditBox" end
+function searchBox.IsForbidden() return false end
+AuctionHouseFrame.SearchBar = { SearchBox = searchBox,
+    FilterButton = { CalculateFiltersArray = function() return { 7 } end, GetLevelRange = function() return 10, 20 end } }
+function AuctionHouseFrame.GetCategoriesList() return { GetCategoryFilterData = function() return { "cloth" }, 9 end } end
+function AuctionHouseFrame.GetCategorySearchContext() return 1 end
+g_auctionHouseSortsBySearchContext = { [1] = { "bySaved" } }
+C_AuctionHouse = { SendBrowseQuery = function(q) query = q end, IsThrottledMessageSystemReady = function() return true end }
+local search = ns.DirectFor(searchBox, AuctionHouseFrame)
+Is("the auction search box is typed into over the top", type(search), "function")
+Is("another box of that window is left alone", ns.DirectFor(mail, AuctionHouseFrame), false)
+Is("a box of any other window is an ordinary one", ns.DirectFor(mail, mail), nil)
+focus = searchBox
+seek()
+Is("the keyboard does not open on the game's box itself", written, 0)
+search("linen")
+Is("the search goes to the game with the typed text", query and query.searchString, "linen")
+Is("with the picked category, filters, levels and sort", query.itemClassFilters[1] == "cloth" and query.filters[2] == 9
+    and query.minLevel == 10 and query.maxLevel == 20 and query.sorts[1] == "bySaved", true)
+Is("and the game's own box was never written", written, 0)
+-- Buy Now: the cover is taken off the game's cursor once; the page behind the dialog while the dialog is up
+local ignored, cleared = {}, {}
+AuctionHouseFrame.DialogOverlay = Obj(AuctionHouseFrame)
+AuctionHouseFrame.BuyDialog = Obj(AuctionHouseFrame)
+AuctionHouseFrame.CommoditiesBuyFrame = Obj(AuctionHouseFrame)
+function SmartNavigation_MarkFrameIgnored(frame, alone) ignored[#ignored + 1] = { frame, alone } end
+function SmartNavigation_ClearIgnoreStatus(frame) cleared[#cleared + 1] = frame end
+seek()
+seek()
+Is("the Buy Now cover is marked as not the cursor's, once", #ignored == 1 and ignored[1][1] == AuctionHouseFrame.DialogOverlay
+    and ignored[1][2] == true, true)
+AuctionHouseFrame.BuyDialog.shown = true
+seek()
+seek()
+Is("with the dialog up the page behind it is marked too, once", #ignored == 2 and ignored[2][1] == AuctionHouseFrame.CommoditiesBuyFrame, true)
+AuctionHouseFrame.BuyDialog.shown = false
+seek()
+seek()
+Is("and given back when the dialog goes", #cleared == 1 and cleared[1] == AuctionHouseFrame.CommoditiesBuyFrame, true)
+-- from one item's page the window is sent back to its list; on the list it is not touched
+local shownMode, sets = "item", 0
+AuctionHouseFrameDisplayMode = { Buy = "list" }
+function AuctionHouseFrame.GetDisplayMode() return shownMode end
+function AuctionHouseFrame.SetDisplayMode(_, mode) shownMode = mode; sets = sets + 1 end
+search("wool")
+Is("a search from an item's page never changes the window", sets, 0)
+Is("and the results still go out", query.searchString, "wool")
+focus = nil
+
 print(failed == 0 and "all checks passed" or (failed .. " check(s) failed"))
 os.exit(failed == 0 and 0 or 1)

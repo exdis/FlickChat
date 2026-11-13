@@ -2111,7 +2111,8 @@ local Fit = { UNDER = 90, CLEAR = 12 }
 
 -- The window a text box belongs to: its last parent before the screen.
 function Fit.WindowOf(edit)
-    local frame = edit
+    -- Our own box laid over one of the game's (Direct.lua): that box's window.
+    local frame = edit.flickFor or edit
     while true do
         local parent = frame:GetParent()
         if not parent or parent == UIParent or parent:IsForbidden() then return frame end
@@ -2406,6 +2407,7 @@ end
 -- middle of that walk, and the game then refuses the cursor's next step as an addon's. Fit.loose: the box the
 -- keyboard is up for this way.
 function Fit.Seek()
+    ns.DirectCheck()
     local focus = GetCurrentKeyBoardFocus()
     if Fit.loose then
         -- It let go, or its window went.
@@ -2416,6 +2418,11 @@ function Fit.Seek()
     end
     if not ns.db.enabled or not IsUsingGamepad() then return end
     if not focus or edits[focus] or focus == box or focus:IsForbidden() or not focus:IsObjectType("EditBox") then return end
+    -- A box whose text the game must never get from an addon (Direct.lua): typed into a box of ours over it,
+    -- or left alone.
+    local direct = ns.DirectFor(focus, Fit.WindowOf(focus))
+    if direct == false then return end
+    if direct then return ns.DirectOpen(focus, direct) end
     Fit.loose = focus
     Open(focus)
 end
@@ -2427,11 +2434,12 @@ function Fit.SeekBoxes(on)
     end
     if on then
         Fit.seeker = C_Timer.NewTicker(0.1, Fit.Seek)
-    elseif Fit.loose then
-        -- The cursor went (the window shut): the keyboard goes with it.
+    else
+        -- The cursor went (the window shut): the keyboard and our own box over a box go with it.
+        ns.DirectCheck(true)
         local was = Fit.loose
         Fit.loose = nil
-        if box == was then ns.Shut() end
+        if was and box == was then ns.Shut() end
     end
 end
 
