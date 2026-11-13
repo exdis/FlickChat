@@ -7,11 +7,44 @@ ns.L = setmetatable({}, { __index = function(_, key)
     return own and own[key] or ns.EN and ns.EN[key] or key
 end })
 
+-- Lua's lower and upper leave accented letters as they are: these know the Latin ones (two bytes, the first 195;
+-- the oe ligature and the y with dots have 197's).
+local UTF8 = "[%z\1-\127\194-\244][\128-\191]*"
+local function Shift(by) return function(c) return "\195" .. string.char(c:byte() + by) end end
+local DownOne, UpOne = Shift(32), Shift(-32)
+
+function ns.Lower(text)
+    text = text:lower()
+    if not text:find("[\195\197]") then return text end
+    return (text:gsub("\195([\128-\150\152-\158])", DownOne):gsub("\197\146", "\197\147"):gsub("\197\184", "\195\191"))
+end
+
+function ns.Upper(text)
+    text = text:upper()
+    if not text:find("[\195\197]") then return text end
+    return (text:gsub("\195([\160-\182\184-\190])", UpOne):gsub("\197\147", "\197\146"):gsub("\195\191", "\197\184"))
+end
+
+function ns.Capital(word)
+    local first = word:match("^" .. UTF8)
+    return first and ns.Upper(first) .. word:sub(#first + 1) or word
+end
+
+-- Typing languages. English's words are the addon's own; each other language's are a load-on-demand folder
+-- beside it (FlickChat_ptBR), which hands them over with FlickChat_AddWords as it loads.
+ns.LANGUAGES = { "enUS", "ptBR", "frFR", "deDE", "itIT" }
+ns.LANGUAGE_NAMES = { enUS = "English", ptBR = "Português", frFR = "Français", deDE = "Deutsch", itIT = "Italiano" }
+ns.wordLists = {}
+function FlickChat_AddWords(code, data) ns.wordLists[code] = data end
+local LoadAddOn = C_AddOns.LoadAddOn
+
 -- learned: word -> times sent; pairs: "word next" -> times ("<s>" starts a message); forms: a word's own capitals;
 -- uses: how often each hint's action was used (a hint goes once learned); arm/rearm: a flick's tilt out and back;
 -- phrases: the player's own quick phrases by slot (an empty slot is the language's default).
+-- language: the language typed in (none: the game's own); wordsOf: whose learned words the four tables above
+-- are; others: the other languages' learned words, by language.
 local DEFAULTS = { enabled = true, learned = {}, pairs = {}, forms = {}, forgot = {}, uses = {}, layout = "letters", size = 100,
-    arm = 0.55, rearm = 0.3, lessonDone = false, phrases = {}, wheelSize = 100, wordRoom = 100 }
+    arm = 0.55, rearm = 0.3, lessonDone = false, phrases = {}, wheelSize = 100, wordRoom = 100, others = {} }
 local DB_VERSION = 1
 local LEARN_CAP, PAIR_CAP = 2000, 4000
 local WHISPERS_KEPT = 10
@@ -109,6 +142,70 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
     if ns.Ready then ns.Ready() end
 end)
 
+-- The language the player types in: their pick, else the game's own where there is a list for it.
+function ns.WantedLanguage()
+    local code = ns.db.language or ns.locale
+    return ns.LANGUAGE_NAMES[code] and code or "enUS"
+end
+
+-- The saved learned words are one language's at a time; another's turn puts these aside and brings its own.
+local OWN = { "learned", "pairs", "forms", "forgot" }
+local function OwnWords(code)
+    local db = ns.db
+    if db.wordsOf == code then return end
+    -- Words learned before languages were kept apart stay with the first one typed in.
+    if not db.wordsOf then
+        db.wordsOf = code
+        return
+    end
+    local away = {}
+    for _, key in ipairs(OWN) do away[key] = db[key] end
+    db.others[db.wordsOf] = away
+    local back = db.others[code] or {}
+    for _, key in ipairs(OWN) do db[key] = back[key] or {} end
+    db.others[code], db.wordsOf = nil, code
+end
+
+local function Loaded(code)
+    if code ~= "enUS" and not ns.wordLists[code] then LoadAddOn("FlickChat_" .. code) end
+    return code == "enUS" or ns.wordLists[code] ~= nil
+end
+
+-- The language whose words are there to type with: the wanted one, its folder loaded; English where that
+-- folder is missing or switched off (said once).
+local missing = {}
+function ns.TypingLanguage()
+    local code = ns.WantedLanguage()
+    if not Loaded(code) then
+        if not missing[code] then
+            missing[code] = true
+            ns.Say(ns.L["LANG_MISSING"]:format(ns.LANGUAGE_NAMES[code], "FlickChat_" .. code))
+        end
+        code = "enUS"
+    end
+    OwnWords(code)
+    return code
+end
+
+-- The settings row: on to the next language whose words are there.
+function ns.NextLanguage()
+    local at = 1
+    for i, code in ipairs(ns.LANGUAGES) do
+        if code == ns.WantedLanguage() then at = i end
+    end
+    for step = 1, #ns.LANGUAGES do
+        local code = ns.LANGUAGES[(at + step - 1) % #ns.LANGUAGES + 1]
+        if Loaded(code) then
+            -- the game's own language is no pick: it is followed
+            if code == ns.locale then ns.db.language = nil else ns.db.language = code end
+            break
+        end
+    end
+    if ns.Relanguage then ns.Relanguage() end
+end
+
+function ns.LanguageName() return ns.LANGUAGE_NAMES[ns.WantedLanguage()] end
+
 -- Over its cap a count table halves: rare entries go, the player's habits stay.
 local function Trim(counts, cap)
     local n = 0
@@ -121,7 +218,7 @@ end
 
 -- A word dropped off the d-pad: its counts go and it is never guessed, until the player spells it out again.
 function ns.Forget(word)
-    local db, low = ns.db, word:lower()
+    local db, low = ns.db, ns.Lower(word)
     db.forgot[low] = true
     db.learned[low], db.forms[low] = nil, nil
     for pair in pairs(db.pairs) do
@@ -149,7 +246,7 @@ function ns.Learn(text)
     for word in text:gmatch("[%a\128-\255']+") do
         word = word:gsub("^'+", ""):gsub("'+$", "")
         if word ~= "" then
-            local low = word:lower()
+            local low = ns.Lower(word)
             if not first and word ~= low and not ns.Dict.Known(low) then db.forms[low] = word end
             db.learned[low] = (db.learned[low] or 0) + 1
             local pair = prev .. " " .. low
@@ -248,8 +345,8 @@ ns.optionRows = ROWS
 function ns.SetMyWords(text)
     local seen, list = {}, {}
     for word in text:gmatch("[%a\128-\255']+") do
-        if not seen[word:lower()] and #list < 60 then
-            seen[word:lower()] = true
+        if not seen[ns.Lower(word)] and #list < 60 then
+            seen[ns.Lower(word)] = true
             list[#list + 1] = word
         end
     end
@@ -599,7 +696,7 @@ function ns.WhisperNames()
     local function Add(label, chatType, target, chance)
         if type(label) ~= "string" or type(target) ~= "string" or label == "" then return end
         if issecretvalue and (issecretvalue(label) or issecretvalue(target)) then return end
-        local key = label:lower() .. "\0" .. target
+        local key = ns.Lower(label) .. "\0" .. target
         if seen[key] then return end
         seen[key] = true
         list[#list + 1] = { label = label, chatType = chatType, tellTarget = target,

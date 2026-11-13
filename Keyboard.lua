@@ -32,8 +32,25 @@ local MISSING_PAUSE = 1.2
 -- d-pad has them); its flicks, taken at a light tilt, set the player's own.
 -- The lesson's three lines, word by word: flicks and the d-pad, then a line ending on a question mark, then sending.
 -- A line ends after the steps in LESSON_LINE_END (the box is cleared for the next one).
-local LESSON = { "anyone", "need", "a", "healer", "which", "dungeon", "tonight", "?", "ty", ":", ")" }
-LESSON.last = "ty :)"
+-- Each typing language has its own, all of one shape and in plain letters (the steps name each letter): four
+-- words, the fourth the chain drill's; three and a question mark; a short thanks and a smiley.
+local LESSON = {}
+LESSON.lines = {
+    enUS = "anyone need a healer which dungeon tonight ? ty : )",
+    ptBR = "precisamos de um healer qual masmorra hoje ? vlw : )",
+    frFR = "on cherche un healer quel donjon demain ? merci : )",
+    deDE = "wir brauchen einen heiler welcher dungeon heute ? danke : )",
+    itIT = "ci serve un healer quale dungeon stasera ? grazie : )",
+}
+function LESSON.Use(code)
+    local i = 0
+    for step in (LESSON.lines[code] or LESSON.lines.enUS):gmatch("%S+") do
+        i = i + 1
+        LESSON[i] = step
+    end
+    LESSON.last = LESSON[9] .. " :)"
+end
+LESSON.Use("enUS")
 -- The word that teaches chained flicks (its first five letters are all on one stick), as a drill: its first two
 -- letters in one move, then four, then all five (the fifth a swing straight across the middle). A stage not
 -- done in one move is asked again, as often as it takes (Y skips the lesson).
@@ -92,7 +109,7 @@ local function EndsSentence(text) return text:match("^%s*$") or text:match("[%.!
 local function PrevLow()
     if EndsSentence(S.committed) then return "<s>" end
     local word = S.committed:match("([%a\128-\255']+)[^%a\128-\255']*$")
-    return word and word:lower() or "<s>"
+    return word and ns.Lower(word) or "<s>"
 end
 
 local function Lead()
@@ -100,11 +117,11 @@ local function Lead()
 end
 
 local function Cap(word)
-    if S.capsLock then return word:upper() end
+    if S.capsLock then return ns.Upper(word) end
     -- Always lowercase: the player's setting, or a dev run's.
     local lowercase = ns.db.lowercase or (ns.dev and ns.dev.lowercase) or ns.practice ~= nil
-    if lowercase then word = word:lower() end
-    if S.caps or (not lowercase and EndsSentence(S.committed)) then return (word:gsub("^%l", string.upper)) end
+    if lowercase then word = ns.Lower(word) end
+    if S.caps or (not lowercase and EndsSentence(S.committed)) then return ns.Capital(word) end
     return word
 end
 
@@ -200,7 +217,7 @@ end
 -- The lesson's step done: the next one; a line's last word empties the box for the next line.
 local function LessonStep(done)
     local lesson = S.lesson
-    if not lesson or done:lower() ~= LESSON[lesson.at] then return end
+    if not lesson or ns.Lower(done) ~= LESSON[lesson.at] then return end
     -- A line done: the box is emptied for the next.
     if LESSON_LINE_END[lesson.at] then S.committed, S.autoSpace, S.undo = "", false, nil end
     -- Past the last word the lesson waits for the send (Send ends it).
@@ -211,12 +228,14 @@ end
 local function Commit(word, space)
     local before = S.committed
     if S.literal then
-        local low = S.literal:lower()
+        local low = ns.Lower(S.literal)
         ns.db.learned[low] = (ns.db.learned[low] or 0) + 1
         ns.db.forgot[low] = nil
         if S.literal ~= low then ns.db.forms[low] = S.literal end
         D.Refresh(S.names)
     end
+    -- An elided word (l') is written onto the next: no space after it.
+    if space and D.Joins(ns.Lower(word)) then space = false end
     S.committed = before .. Lead() .. Cap(word) .. (space and " " or "")
     S.undo = { committed = before, flicks = S.flicks, literal = S.literal, shown = S.shown, after = S.committed }
     S.flicks, S.literal, S.caps, S.autoSpace = "", nil, false, space
@@ -349,10 +368,9 @@ local function ExactFlick(digit)
         Flash(digit)
         return Paint()
     end
-    local letters = Groups()[S.box]
-    local i = #letters <= 4 and (digit - 1) % 4 + 1 or digit
-    local c = letters:sub(i, i)
-    if c == "" then return end
+    local letters = D.Box(S.box)
+    local c = letters[#letters <= 4 and (digit - 1) % 4 + 1 or digit]
+    if not c then return end
     S.literal, S.box = (S.literal or "") .. c, nil
     Use("exact")
     Flash(digit)
@@ -612,7 +630,7 @@ function LESSON.Run(late)
     end
     if key:sub(1, m) ~= S.flicks or m < asked.a then return end
     for slot = 1, #SLOT_KEYS do
-        if (S.slots[slot] or ""):lower() == target then
+        if ns.Lower(S.slots[slot] or "") == target then
             lesson.asked, lesson.missed = nil, false
             return
         end
@@ -837,7 +855,7 @@ end
 Send = function()
     if ns.practice then return ns.practice.Again() end
     if S.lesson then
-        local last = S.lesson.at == #LESSON and (Word() or ""):lower() == LESSON[#LESSON]
+        local last = S.lesson.at == #LESSON and ns.Lower(Word() or "") == LESSON[#LESSON]
         if last or S.lesson.at > #LESSON then
             FinishLesson()
             Reset("")
@@ -1128,7 +1146,7 @@ local function Press(button)
             ns.Forget(word)
             D.Refresh(S.names)
             Guess()
-            ns.Say(L["FORGOT"]:format(word:lower()))
+            ns.Say(L["FORGOT"]:format(ns.Lower(word)))
         end
         return Show()
     end
@@ -1214,7 +1232,7 @@ end
 
 
 local function GroupText(text)
-    if S.capsLock or S.caps then return text:upper() end
+    if S.capsLock or S.caps then return ns.Upper(text) end
     return text
 end
 
@@ -1224,7 +1242,7 @@ local function PaintRose(rose, st)
     local groups = Groups()
     local holder = st.other
     local picking = Holding(holder) and groups[holder.base + Dir4(holder.px, holder.py)]
-    local latched = S.exact and S.box and groups[S.box]
+    local latched = S.exact and S.box and D.Box(S.box)
     local now, lit = GetTime(), S.lesson and S.lesson.next
     local ring = S.phrases and S.phraseList or nil
     for dir, cell in ipairs(rose.cells) do
@@ -1236,8 +1254,7 @@ local function PaintRose(rose, st)
         if ring then
             cell.text:SetText(pick and pick.label or "")
         elseif latched then
-            local i = #latched <= 4 and dir or digit
-            cell.text:SetText(GroupText(latched:sub(i, i)))
+            cell.text:SetText(GroupText(latched[#latched <= 4 and dir or digit] or ""))
         else
             cell.text:SetText(picking and "" or GroupText(groups[digit]))
         end
@@ -1275,7 +1292,7 @@ function LESSON.Check()
     for i = 1, #LESSON do
         if LESSON_LINE_END[i] and i < lesson.at then first = i + 1 end
     end
-    local function Plain(text) return (text:lower():gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
+    local function Plain(text) return (ns.Lower(text):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")) end
     local have = Plain(S.committed)
     -- the line as it stands after each of its steps
     local text, fits = "", first
@@ -1351,7 +1368,7 @@ local function LessonText()
         if sameStick then return L["LESSON_WRONG_DIR"]:format(unpack(how)) end
         return L["LESSON_WRONG"]:format(Groups()[got], unpack(how))
     end
-    local shown = (Word() or ""):lower()
+    local shown = ns.Lower(Word() or "")
     local intro = #S.flicks == 0 and LESSON_LINE_START[lesson.at]
     intro = intro and L[intro] .. "\n\n" or ""
     local rolling = lesson.at == LESSON.roll
@@ -1361,7 +1378,7 @@ local function LessonText()
     -- words put there: watching for it is the habit to teach. Only a word the box already shows is left to RT.
     if #S.flicks < #key or shown ~= target then
         for slot = 1, #SLOT_KEYS do
-            if (S.slots[slot] or ""):lower() == target
+            if ns.Lower(S.slots[slot] or "") == target
                 and (#S.flicks > 0 or lesson.at < #LESSON)
                 and (not rolling or lesson.chained) then
                 local line = lesson.dpadTold and "LESSON_DPAD" or "LESSON_DPAD_FIRST"
@@ -1418,7 +1435,7 @@ local function Hint()
     if S.wheel then return "" end
     if S.move then return L["HINT_MOVE"]:format(Glyph("PAD1"), Glyph("PAD2"), Glyph("PAD4")) end
     if S.draftBack then return L["DRAFT_BACK"]:format(Glyph("PADBACK")) end
-    if S.forget then return L["FORGET_ASK"]:format(S.forget:lower(), Glyph("PAD1")) end
+    if S.forget then return L["FORGET_ASK"]:format(ns.Lower(S.forget), Glyph("PAD1")) end
     if S.phrases then
         if S.phraseSave then return L["HINT_PHRASE_SAVE"]:format(Glyph("PADLTRIGGER"), Glyph("PAD1")) end
         if S.phraseNoText then return L["PHRASE_NEED_TEXT"]:format(Glyph("PAD1"), Glyph("PAD3")) end
@@ -1609,7 +1626,7 @@ Paint = function()
     local text = Hint()
     PaintRose(kb.roses[1], sticks.Left)
     PaintRose(kb.roses[2], sticks.Right)
-    local shown = (Word() or ""):lower()
+    local shown = ns.Lower(Word() or "")
     local list = S.naming and S.naming.found
     for i, slot in ipairs(kb.slots) do
         local entry = (list or NOTHING)[i]
@@ -1628,11 +1645,11 @@ Paint = function()
         if entry then
             lit = S.naming and i == 1
         else
-            lit = word and word:lower() == shown
+            lit = word and ns.Lower(word) == shown
         end
         -- While the lesson points at a d-pad word, that one alone is yellow (not the one the box shows too).
         local color = lit and not (S.lesson and S.lesson.slot) and YELLOW or IDLE
-        if S.forget and word and word:lower() == S.forget:lower() then color = FORGET_COLOR end
+        if S.forget and word and ns.Lower(word) == ns.Lower(S.forget) then color = FORGET_COLOR end
         -- The lesson's "it is over the d-pad": that word beats, so the eye finds it.
         local beat = S.lesson ~= nil and S.lesson.slot == i
         if beat then color = YELLOW end
@@ -1708,7 +1725,7 @@ Paint = function()
             if LESSON_LINE_END[i] and i < at then first = i + 1 end
         end
         for i = first, #LESSON do
-            local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. LESSON[i] .. "|r"
+            local word = (i < at and "|cff8c8c8c" or "|cffffffff") .. D.Form(LESSON[i]) .. "|r"
             -- a question mark closes its word, a symbol after a symbol joins it (the smiley)
             local joins = #words > 0 and (LESSON[i] == "?" or (not LESSON[i]:find("%a") and not LESSON[i - 1]:find("%a")))
             if joins then words[#words] = words[#words] .. word else words[#words + 1] = word end
@@ -1878,6 +1895,17 @@ function ns.Restyle()
     kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
     kb.hintLift = false
     if box or S.preview then Paint() end
+end
+
+-- The typing language changed: its list, and the word under way dropped.
+function ns.Relanguage()
+    if not (kb and box) then return end
+    D.Build()
+    LESSON.Use(D.Code())
+    D.Refresh(S.names)
+    S.flicks, S.literal = "", nil
+    Guess()
+    Show()
 end
 
 function ns.Relayout()
@@ -2243,7 +2271,7 @@ end
 -- Opened() and Stopped().
 function ns.DevTools()
     return { OnStick = OnStick, Press = Press, Unpress = Unpress, Word = Word, PrevLow = PrevLow, Guess = Guess,
-        state = S, dict = D, slotKeys = SLOT_KEYS, dirDegrees = DIR_DEGREES,
+        state = S, dict = D, slotKeys = SLOT_KEYS, dirDegrees = DIR_DEGREES, lesson = LESSON,
         Keyboard = function() return kb end, Box = function() return box end }
 end
 
@@ -2251,6 +2279,7 @@ local function Open(edit)
     S.preview = nil
     if not kb then Build() end
     D.Build()
+    LESSON.Use(D.Code())
     box = edit
     S.names = Names()
     D.Refresh(S.names)

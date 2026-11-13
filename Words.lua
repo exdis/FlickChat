@@ -1,14 +1,15 @@
 local _, ns = ...
 
--- The word list. A word's key is its letters' groups in order, as the layout's digits: 1-4 the left stick's up,
--- right, down and left, 5-8 the right stick's. Flicks find words by key; the word's own count, the word before it
--- and the player's own words rank them. Built on the keyboard's first use.
+-- The word lists, one per language typed in: English's is this file's own, the others come with their
+-- load-on-demand folders. A word's key is its letters' groups in order, as the layout's digits: 1-4 the left
+-- stick's up, right, down and left, 5-8 the right stick's. Flicks find words by key; the word's own count, the
+-- word before it and the player's own words rank them. A list is built on its language's first use.
 
 local D = {}
 ns.Dict = D
 
 local log, exp, byte, char, sub = math.log, math.exp, string.byte, string.char, string.sub
-local find, match, lower = string.find, string.match, string.lower
+local find, match, LowerCase = string.find, string.match, ns.Lower
 
 ns.LAYOUTS = {
     letters = { "abc", "def", "ghi", "jklm", "nop", "qrs", "tuv", "wxyz" },
@@ -51,10 +52,11 @@ for d = 1, 8 do
     ALT[48 + d] = alts
 end
 
-local words, lows, keys, prob, idOf = {}, {}, {}, {}, {}
-local order, sorted = {}, {}
+-- lex: the list in use; the tables below are its own.
+local lexicons, lex = {}, nil
+local words, lows, keys, prob, idOf, order, sorted
 -- pairLines[id]: the word's followers as the data has them; after: the word before's, read once per word.
-local pairLines = {}
+local pairLines
 local after = { id = false, counts = {}, top = {}, total = 0, kinds = 0 }
 local digitOf = {}
 -- extras: names and the player's own words outside the list; own: the player's counts.
@@ -69,10 +71,11 @@ local tag = { score = -math.huge }
 local stems, stemOrder = {}, {}
 -- The letter runs some word spells with exactly these flicks, no misflick taken (scratch too).
 local cleanStems = {}
-local apostrophe = {}
+-- cut[id]: an apostrophe or an accented letter in the word, so its first letters are cut letter by letter.
+local cut
 -- rare[head]: lines "\n<key> <word> <count>" sorted by key, the head a three-digit key or a longer one's first
 -- four; rareHeads: the first three of those. lettersRare is the data's own.
-local rare, rareHeads, lettersRare = {}, {}, nil
+local rare, rareHeads, lettersRare
 
 -- Chat shorthand and game words the counted sentences lack, offered as if as common as the listed word of their
 -- kind (chat: lfg, game: dm). Zones, battlegrounds, dungeons, abilities and class nicknames.
@@ -210,7 +213,7 @@ for low in MATURE:gmatch("%S+") do mature[low] = true end
 local filtering = false
 -- Words the player dropped off the d-pad: never guessed.
 local forgot = NONE
-local function Barred(low) return forgot[low] or (filtering and mature[low]) end
+local function Barred(low) return forgot[low] or (filtering and (mature[low] or lex.mature[low])) end
 local total = 1
 
 local function KeyOf(word)
@@ -276,23 +279,56 @@ function D.SetLayout(name)
     end
     wipe(rareHeads)
     for head in pairs(rare) do rareHeads[sub(head, 1, 3)] = true end
+    lex.rare, lex.layout = rare, name
+    -- Each box's letters for exact letters: its own, then the language's accented ones of them.
+    lex.boxes = {}
+    for g, letters in ipairs(groups) do
+        local box = {}
+        for c in letters:gmatch(".") do box[#box + 1] = c end
+        for c in lex.accents:gmatch(UTF8) do
+            if digitOf[FOLD[c] or c] == tostring(g) then box[#box + 1] = c end
+        end
+        lex.boxes[g] = box
+    end
 end
 
-function D.Build()
-    if #words > 0 then return end
-    total = 0
-    for word, count in ns.WORD_DATA:gmatch("(%S+) (%d+)") do
-        local id = #words + 1
-        words[id], lows[id], prob[id] = word, word:lower(), tonumber(count)
-        apostrophe[id] = word:find("'", 1, true) ~= nil
-        idOf[lows[id]] = idOf[lows[id]] or id
-        total = total + prob[id]
+-- A language's list from its data: words (word and count lines, commonest first), pairs, rare, and for a
+-- language folder's: mature (its filter's words), joins (elided words that take no space after: l'),
+-- accents (its accented letters, for exact letters).
+local function NewList(code, data)
+    local l = { code = code, words = {}, lows = {}, keys = {}, prob = {}, idOf = {}, order = {}, sorted = {}, cut = {},
+        rareHeads = {}, mature = {}, joins = {}, total = 0, accents = data.accents or "" }
+    for word, count in data.words:gmatch("(%S+) (%d+)") do
+        local id = #l.words + 1
+        l.words[id], l.lows[id], l.prob[id] = word, LowerCase(word), tonumber(count)
+        l.cut[id] = find(word, "['\128-\255]") ~= nil
+        l.idOf[l.lows[id]] = l.idOf[l.lows[id]] or id
+        l.total = l.total + l.prob[id]
     end
-    for id = 1, #words do prob[id] = prob[id] / total end
-    pairLines = ns.PAIR_DATA
-    lettersRare = ns.RARE_DATA
-    ns.WORD_DATA, ns.PAIR_DATA, ns.RARE_DATA = nil, nil, nil
-    D.SetLayout(ns.db.layout)
+    for id = 1, #l.words do l.prob[id] = l.prob[id] / l.total end
+    l.pairLines, l.lettersRare = data.pairs, data.rare
+    for low in (data.mature or ""):gmatch("%S+") do l.mature[low] = true end
+    for low in (data.joins or ""):gmatch("%S+") do l.joins[low] = true end
+    data.words = nil
+    return l
+end
+
+-- The list of the language typed in (ns.TypingLanguage: its folder loaded, English where it is not there).
+function D.Build()
+    local code = ns.TypingLanguage()
+    if code == "enUS" and not ns.wordLists.enUS then
+        ns.wordLists.enUS = { words = ns.WORD_DATA, pairs = ns.PAIR_DATA, rare = ns.RARE_DATA }
+        ns.WORD_DATA, ns.PAIR_DATA, ns.RARE_DATA = nil, nil, nil
+    end
+    local l = lexicons[code] or NewList(code, ns.wordLists[code])
+    lexicons[code] = l
+    if lex ~= l then
+        lex = l
+        words, lows, keys, prob, idOf, order, sorted = l.words, l.lows, l.keys, l.prob, l.idOf, l.order, l.sorted
+        pairLines, cut, rare, rareHeads, lettersRare, total = l.pairLines, l.cut, l.rare, l.rareHeads, l.lettersRare, l.total
+        after.id = false
+    end
+    if not l.rare or l.layout ~= ns.db.layout then D.SetLayout(ns.db.layout) end
 end
 
 -- A rarer word's own spelling (capitals kept) from its lowercase, or nil when the list lacks it.
@@ -303,20 +339,35 @@ local function RareForm(low)
     while at do
         local k, word, nextAt = match(lines, "^\n(%d+) (%S+) %d+()", at)
         if k ~= key then return nil end
-        if lower(word) == low then return word end
+        if LowerCase(word) == low then return word end
         at = nextAt
     end
 end
 
 function D.Known(low) return idOf[low] ~= nil or RareForm(low) ~= nil end
 
-function D.Built() return #words > 0 end
+function D.Built() return lex ~= nil end
+
+function D.Code() return lex.code end
+
+-- An elided word, written onto the next with no space: l'.
+function D.Joins(low) return lex.joins[low] end
+
+function D.Box(group) return lex.boxes[group] end
+
+-- A listed word as the list writes it (its capital, a noun's in German), from its lowercase.
+function D.Form(low)
+    local id = idOf[low]
+    return id and words[id] or RareForm(low) or low
+end
 
 -- The i-th commonest word when it is one for typing practice: plain lowercase letters, two or more, never one
 -- the mature filter holds.
 function D.PracticeWord(i)
     local word = words[i]
-    if word and word == lows[i] and #word >= 2 and not find(word, "[^a-z]") and not mature[word] then return word end
+    if word and word == lows[i] and #word >= 2 and not find(word, "[^a-z]") and not mature[word] and not lex.mature[word] then
+        return word
+    end
 end
 
 -- The player's counts and the words outside the list: names (name -> chance) and the player's own new words.
@@ -339,7 +390,7 @@ function D.Refresh(names)
     local seen = {}
     -- ours: shorthand, game words and the player's own stand beside a listed word of the same letters.
     local function Add(word, chance, ours)
-        local low = word:lower()
+        local low = LowerCase(word)
         local key = KeyOf(word)
         if seen[low] or (not ours and D.Known(low)) or not key or key == "" then return end
         seen[low] = true
@@ -348,14 +399,18 @@ function D.Refresh(names)
     for name, chance in pairs(names or {}) do Add(name, chance) end
     local function Like(low) return idOf[low] and prob[idOf[low]] or FALLBACK_CHANCE end
     for word in (db.myWords or ""):gmatch("%S+") do Add(word, Like(OWN_WORD_LIKE), true) end
-    for word in CHAT_MORE:gmatch("%S+") do Add(word, Like(CHAT_LIKE), true) end
-    for word in GAME_MORE:gmatch("%S+") do Add(word, Like(GAME_LIKE), true) end
+    -- English's own extra shorthand and places; another language's list holds its own.
+    if lex.code == "enUS" then
+        for word in CHAT_MORE:gmatch("%S+") do Add(word, Like(CHAT_LIKE), true) end
+        for word in GAME_MORE:gmatch("%S+") do Add(word, Like(GAME_LIKE), true) end
+    end
     for low in pairs(db.learned) do Add(db.forms[low] or low, 1e-7) end
 end
 
+-- An elided word and the word it was written onto (l'ami) count as that word (ami) where the list lacks the two as one.
 local function PrevId(prevLow)
     if prevLow == "<s>" then return 0 end
-    return prevLow and idOf[prevLow]
+    return prevLow and (idOf[prevLow] or idOf[match(prevLow, "'([^']+)$")])
 end
 
 -- The word before's followers: counts by id, how often it is followed and by how many words, the likeliest few.
@@ -435,7 +490,10 @@ local function StemOf(word, n)
         out[#out + 1] = c
         if c ~= "'" then letters = letters + 1 end
     end
-    return table.concat(out)
+    local stem = table.concat(out)
+    -- all of an elided word's letters: the word, its apostrophe too
+    if #stem + 1 == #word and sub(word, -1) == "'" then return word end
+    return stem
 end
 
 local function AddStem(stem, score, clean)
@@ -455,7 +513,7 @@ local function Stems()
     end
     for i = #stemOrder, n + 1, -1 do stemOrder[i] = nil end
     table.sort(stemOrder)
-    for i = 1, n do Keep(stemOrder[i], stemOrder[i]:lower(), stems[stemOrder[i]]) end
+    for i = 1, n do Keep(stemOrder[i], LowerCase(stemOrder[i]), stems[stemOrder[i]]) end
     wipe(stems)
     local out = Result()
     best.cap = GUESSES
@@ -490,13 +548,13 @@ local function RareLeaf(lines, prefix, n, cost, maxExtra, prevId, prevLow)
     while at do
         local key, word, count, nextAt = match(lines, "^\n(%d+) (%S+) (%d+)()", at)
         if not key or sub(key, 1, n) ~= prefix then return end
-        local low = lower(word)
+        local low = LowerCase(word)
         if not Barred(low) then
             local extra = #key - n
             local score = Score(nil, low, count / total, prevId, prevLow) + cost
             if extra <= maxExtra then Keep(word, low, score - extra * EXTRA_COST) end
             if extra == 0 and cost == 0 then Exact(word, low, score) end
-            local stem = find(word, "'", 1, true) and StemOf(word, n) or sub(word, 1, n)
+            local stem = find(word, "['\128-\255]") and StemOf(word, n) or sub(word, 1, n)
             AddStem(stem, score + (extra == 0 and WHOLE_WORD or 0), cost == 0)
         end
         at = nextAt
@@ -518,7 +576,7 @@ local function Walk(seq, n, i, prefix, lo, hi, cost, subs, prevId, prevLow)
                     Exact(words[id], lows[id], score)
                     if not pairLines[id] and score > tag.score then tag.word, tag.low, tag.score = words[id], lows[id], score end
                 end
-                local stem = apostrophe[id] and StemOf(words[id], n) or sub(words[id], 1, n)
+                local stem = cut[id] and StemOf(words[id], n) or sub(words[id], 1, n)
                 AddStem(stem, score + (extra == 0 and WHOLE_WORD or 0), cost == 0)
             end
         end
@@ -565,7 +623,7 @@ end
 local function Slot(guesses, pick, at)
     if not pick.word then return at end
     for _, word in ipairs(guesses) do
-        if lower(word) == pick.low then return at end
+        if LowerCase(word) == pick.low then return at end
     end
     guesses[math.min(#guesses + 1, at)] = pick.word
     return at - 1
@@ -637,7 +695,7 @@ function D.MatchNames(list, seq)
     for _, e in ipairs(list) do
         if e.key == nil then e.key = KeyOf(e.label:match("^%S+") or "") or false end
         local cost = e.key and NameCost(e.key, seq)
-        if cost then Keep(e, e.label:lower() .. "\0" .. e.tellTarget, log(e.chance) + cost) end
+        if cost then Keep(e, LowerCase(e.label) .. "\0" .. e.tellTarget, log(e.chance) + cost) end
     end
     return Result()
 end

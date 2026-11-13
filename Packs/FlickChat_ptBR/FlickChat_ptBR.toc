@@ -1,0 +1,11 @@
+## Interface: 16001, 120100, 120105, 120107
+## Title: FlickChat: Português
+## Notes: Portuguese words for FlickChat's controller keyboard. The game loads them only while you type in Portuguese.
+## Author: fallenguard
+## Version: 1.2.0
+## Category: Chat
+## Group: FlickChat
+## Dependencies: FlickChat
+## LoadOnDemand: 1
+
+Words.lua

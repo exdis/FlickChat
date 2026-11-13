@@ -92,7 +92,18 @@ Settings = {
     RegisterAddOnCategory = function(category) Settings.registered = category end,
     OpenToCategory = function(id) openedCategory = id end,
 }
-C_AddOns = { GetAddOnMetadata = function() return "FlickChat" end }
+C_AddOns = { GetAddOnMetadata = function() return "FlickChat" end,
+    -- a language folder (Packs/<name>): its files run, as the game loads it on demand
+    LoadAddOn = function(name)
+        local toc = io.open(dir .. "/Packs/" .. name .. "/" .. name .. ".toc")
+        if not toc then return false, "MISSING" end
+        for line in toc:lines() do
+            line = line:gsub("\r", "")
+            if line ~= "" and line:sub(1, 1) ~= "#" then assert(loadfile(dir .. "/Packs/" .. name .. "/" .. line))(name, {}) end
+        end
+        toc:close()
+        return true
+    end }
 
 local frames = {}
 local generic = {}
@@ -272,6 +283,14 @@ box.chatFrame = setmetatable({ footer = { inputLegend = legend, isShown = true }
     return generic[k] or function() end
 end })
 
+-- words learned before languages were kept apart: there after the first open, as the first language's own
+ns.db.learned.oldword = 5
+Open()
+Is("words learned before stay through the first open", ns.db.learned.oldword, 5)
+Is("as the words of the language typed in", ns.db.wordsOf, "enUS")
+ns.db.learned.oldword = nil
+Press("PAD2")
+
 -- a word, kept, sent
 Open()
 kb = _G.FlickChatKeyboard
@@ -381,6 +400,14 @@ generic.Hide(own)
 generic.Hide(listed.frame)
 SlashCmdList.FLICKCHAT("options")
 Is("/flick options opens them too", own.shown, true)
+-- the first row is the typing language: A turns to the next whose words are there, and round to the game's own
+own.scripts.OnGamePadButtonDown(own, "PAD1")
+Is("A on the first row turns to the next language", ns.db.language, "ptBR")
+Is("the row names it", ns.LanguageName(), "Português")
+for _ = 2, #ns.LANGUAGES do own.scripts.OnGamePadButtonDown(own, "PAD1") end
+Is("round them all it follows the game's language again", ns.db.language, nil)
+-- the first box is under it
+own.scripts.OnGamePadButtonDown(own, "PADDDOWN")
 local was = ns.db.lowercase
 own.scripts.OnGamePadButtonDown(own, "PAD1")
 Is("A flips the first box", ns.db.lowercase == true, not was)
@@ -501,6 +528,87 @@ search("wool")
 Is("a search from an item's page never changes the window", sets, 0)
 Is("and the results still go out", query.searchString, "wool")
 focus = nil
+
+-- every typing language: its folder's words become the keyboard's, an accented word comes out whole, its lesson's
+-- words are plain letters its list offers, the drill word rolls three boxes and swings across, and its folder
+-- carries the addon's version
+local D = ns.Dict
+local function Version(path)
+    for line in io.lines(path) do
+        local version = line:match("^## Version:%s*(%S+)")
+        if version then return version end
+    end
+end
+local ACCENTED = { enUS = "hello", ptBR = "não", frFR = "où", deDE = "für", itIT = "più" }
+for _, code in ipairs(ns.LANGUAGES) do
+    ns.db.language, ns.db.wordsOf, ns.db.others = code, code, {}
+    ns.db.learned, ns.db.pairs, ns.db.forms, ns.db.forgot = {}, {}, {}, {}
+    Open()
+    Is(code .. ": its words are the keyboard's", D.Code(), code)
+    Type(ACCENTED[code])
+    Press("PAD1")
+    Is(code .. ": a word with its accent", sent[#sent], ns.Capital(ACCENTED[code]))
+    local steps, wrong, prev = {}, {}, "<s>"
+    for step in T.lesson.lines[code]:gmatch("%S+") do steps[#steps + 1] = step end
+    Is(code .. ": the lesson has eleven steps", #steps, 11)
+    for _, step in ipairs(steps) do
+        if step:find("%a") then
+            local guesses, stems = D.Decode(D.KeyOf(step), prev)
+            local there = false
+            for _, word in ipairs(guesses) do there = there or ns.Lower(word) == step end
+            for _, word in ipairs(stems) do there = there or ns.Lower(word) == step end
+            if step:find("[^a-z]") then wrong[#wrong + 1] = step .. " (plain small letters only)" end
+            if not there then wrong[#wrong + 1] = step .. " (not offered)" end
+            prev = step
+        end
+    end
+    Is(code .. ": the lesson's words are offered", table.concat(wrong, ", "), "")
+    local key, moves = D.KeyOf(steps[4]), {}
+    for i = 1, 4 do
+        local a, b = tonumber(key:sub(i, i)), tonumber(key:sub(i + 1, i + 1))
+        moves[i] = (a <= 4) == (b <= 4) and (b - a) % 4 or "other stick"
+    end
+    local rolls = (moves[1] == 1 or moves[1] == 3) and (moves[2] == 1 or moves[2] == 3) and (moves[3] == 1 or moves[3] == 3)
+    Is(code .. ": the drill word rolls three boxes, then swings across", rolls and moves[4] == 2, true)
+    Press("PAD2")
+    if code ~= "enUS" then
+        Is(code .. ": its folder carries the addon's version",
+            Version(dir .. "/Packs/FlickChat_" .. code .. "/FlickChat_" .. code .. ".toc"), Version(dir .. "/FlickChat.toc"))
+    end
+end
+-- a language whose folder is not there: said once, and English's words
+local lines = {}
+local printWas = print
+print = function(text) lines[#lines + 1] = text end
+ns.LANGUAGE_NAMES.xxXX, ns.db.language = "Test", "xxXX"
+Open()
+Press("PAD2")
+Open()
+Press("PAD2")
+print = printWas
+Is("a language with no folder types English", D.Code(), "enUS")
+Is("and says so once", #lines, 1)
+ns.LANGUAGE_NAMES.xxXX, ns.db.language = nil, nil
+-- each language keeps what it learned: another's turn puts these aside, and its own turn brings them back
+ns.db.learned.zug = 3
+ns.db.language = "ptBR"
+Open()
+Is("another language starts with nothing learned", next(ns.db.learned), nil)
+Is("the first one's learned words wait", ns.db.others.enUS.learned.zug, 3)
+Press("PAD2")
+ns.db.language = nil
+Open()
+Is("and come back with its turn", ns.db.learned.zug, 3)
+Press("PAD2")
+ns.db.learned.zug = nil
+-- the other letter layout on another language's words
+ns.db.language, ns.db.layout = "frFR", "vowels"
+Open()
+Type("merci")
+Press("PAD1")
+Is("a French word on the vowels layout", sent[#sent], "Merci")
+Press("PAD2")
+ns.db.language, ns.db.layout = nil, "letters"
 
 -- every language's strings: none English lacks, and the same %s and %d in the same order as English's
 local function Blanks(text)

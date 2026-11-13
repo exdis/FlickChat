@@ -10,6 +10,7 @@ ignore = {
 globals = {
     "FlickChatDB",
     "FlickChat_AttachDevTools",
+    "FlickChat_AddWords",
     "SlashCmdList",
     "SLASH_FLICKCHAT1", "SLASH_FLICKCHAT2", "SLASH_FLICKCHAT3",
 }

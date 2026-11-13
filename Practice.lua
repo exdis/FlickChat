@@ -122,7 +122,7 @@ function practice.Typed(word)
     if run.over then return end
     practice.Flick()
     local entry = run.rows[run.row][run.at]
-    entry.right = word:lower() == entry.word
+    entry.right = ns.Lower(word) == entry.word
     run.tried = run.tried + 1
     if entry.right then
         run.right = run.right + 1

@@ -25,6 +25,7 @@ local function Specs()
     local function Slider(key, label, low, high) list[#list + 1] = { slider = R[key], label = label, low = low, high = high } end
     local function Button(label, text, press, tip) list[#list + 1] = { press = press, label = label, text = text, tip = tip } end
     Head(L["OPT_HEAD_OPTIONS"])
+    Button(L["OPT_LANGUAGE"], ns.LanguageName, function() ns.NextLanguage() end, L["OPT_LANGUAGE_TIP"])
     Check("lowercase", L["OPT_LOWERCASE"])
     Check("matureFilter", L["OPT_MATURE"])
     Check("phraseSend", L["OPT_PHRASE_SEND"])

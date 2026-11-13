@@ -179,4 +179,7 @@ ns.EN = {
     OPT_WORDS = "Your own words",
     WORDS_NONE = "Add words",
     OPT_WORDS_TIP = "Words and shorthand the guesses should know, with a space between. Words you spell letter by letter are learned as well.",
+    OPT_LANGUAGE = "Typing language",
+    OPT_LANGUAGE_TIP = "The language of the words the keyboard guesses. Each language keeps the words it learned from you.",
+    LANG_MISSING = "%s words are not installed or are switched off (%s), so the keyboard guesses English words.",
 }
