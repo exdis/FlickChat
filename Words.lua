@@ -66,7 +66,7 @@ local exact = { score = -math.huge }
 -- The same for the words the counted sentences never held (tags, shorthand, names, the player's own): rfc after "to".
 local tag = { score = -math.huge }
 -- The letters so far: each word's first n letters, summed by its chance (scratch, emptied each decode).
-local stems = {}
+local stems, stemOrder = {}, {}
 -- The letter runs some word spells with exactly these flicks, no misflick taken (scratch too).
 local cleanStems = {}
 local apostrophe = {}
@@ -447,7 +447,15 @@ end
 -- flicked before those taking a flick as missed.
 local function Stems()
     best.n, best.cap = 0, STEMS_KEPT
-    for stem, chance in pairs(stems) do Keep(stem, stem:lower(), chance) end
+    -- In letter order: readings of the same chance keep one order from one time to the next.
+    local n = 0
+    for stem in pairs(stems) do
+        n = n + 1
+        stemOrder[n] = stem
+    end
+    for i = #stemOrder, n + 1, -1 do stemOrder[i] = nil end
+    table.sort(stemOrder)
+    for i = 1, n do Keep(stemOrder[i], stemOrder[i]:lower(), stems[stemOrder[i]]) end
     wipe(stems)
     local out = Result()
     best.cap = GUESSES
