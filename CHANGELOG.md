@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-11-13
+
+### Added
+- Typing languages: the keyboard now guesses words in Portuguese, French, German and Italian as well as English. It follows your game's language, and Typing language in the settings picks another. Each language keeps the words it learned from you, and has its own first lesson and mature word filter.
+- Accented letters: a word comes out with its accents from plain flicks (n, a, o gives não), and in exact letters a box also holds its accented letters.
+- French and Italian words that join the next one (l', d', qu') are written onto it with no space.
+- FlickChat's own text in Portuguese.
+- A line in chat when someone in your guild or group has a newer FlickChat than yours, with where to update. It shows at each login until you have that version.
+
+### Fixed
+- RB's readings that are equally likely now come in the same order every time.
+
 ## [1.2.0] - 2026-11-13
 
 ### Added
