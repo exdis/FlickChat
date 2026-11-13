@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0] - 2026-11-13
+
+### Added
+- The keyboard now comes up for other text boxes too, not only chat: mail's To, Subject and message, the search boxes of your bags and bank, name boxes in dialogs. Put the game's cursor on the box and press Select. A keeps what you typed and B puts back what was there. Boxes that take only numbers open on the digits.
+- The auction house can be searched with the controller: Select its search box, type, and A runs the search with the category and filters you picked.
+- A line in chat when another addon has switched off Chat on the game's controller menu, naming that addon: the keyboard cannot open while it is.
+
+### Changed
+- The settings are a window of FlickChat's own, worked with the d-pad, A and B. Open it from the keyboard's wheel (Y, last page, Settings), from the game's Options on the AddOns tab, or with /flick options.
+- While you type in another window's box, the keyboard, its button bar and its hints stand beside that window, never on it.
+- FlickChat's name in chat and on its windows is in the blue of its icon.
+- The setting that put chat on a controller button is gone: the game's controller mode never reads such a button. A button it had set is given back.
+- The View and bumper marks on the chat tabs show only while chat is typed in, and a window standing over the chat covers them.
+
+### Fixed
+- An error from the game's own Status Text setting after FlickChat's options had been opened.
+- In the auction house, the game's cursor now reaches Buy Now in the purchase dialog.
+- A sent message is no longer kept as an unsent one.
+
 ## [1.1.0] - 2026-11-12
 
 ### Added
