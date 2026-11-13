@@ -56,6 +56,71 @@ local function Migrate(db)
     db.dbVersion = DB_VERSION
 end
 
+-- Login notes: the typing languages, once; a newer version heard from someone in the guild or group, at each
+-- login until this one is as new (forgotten after a month unheard).
+local PREFIX, UPDATE_URL, HEARD_FOR = "FlickChat", "curseforge.com/wow/addons/flickchat", 30 * 86400
+local OWN_VERSION = C_AddOns.GetAddOnMetadata(addonName, "Version") or ""
+local SendAddonMessage, InLockdown = C_ChatInfo.SendAddonMessage, C_ChatInfo.InChatMessagingLockdown
+local updateTold, announced, grouped = false, 0, 0
+
+local function VersionNumber(version)
+    local major, minor, patch = (version or ""):match("^(%d+)%.(%d+)%.(%d+)$")
+    return major and major * 1e6 + minor * 1e3 + patch
+end
+
+function ns.SayLanguages()
+    local names = {}
+    for i = 2, #ns.LANGUAGES do names[#names + 1] = ns.LANGUAGE_NAMES[ns.LANGUAGES[i]] end
+    ns.Say(ns.L["NEWS_LANGUAGES"]:format(table.concat(names, ", ")))
+end
+
+-- In red after the addon's blue name: the one note that asks the player to act.
+function ns.SayUpdate(newest)
+    ns.Say("|cffff4040" .. ns.L["UPDATE_OUT"]:format(newest, OWN_VERSION, UPDATE_URL) .. "|r")
+end
+
+-- Another player's version, as their addon sent it: a newer one is said once a session.
+local function Heard(version)
+    local db = ns.db
+    local theirs, mine = VersionNumber(version), VersionNumber(OWN_VERSION)
+    if not theirs or not mine or theirs <= mine then return end
+    db.newestAt = time()
+    if theirs > (VersionNumber(db.newest) or 0) then db.newest = version end
+    if not updateTold then
+        updateTold = true
+        ns.SayUpdate(db.newest)
+    end
+end
+
+-- This version to the group, and at login to the guild.
+local function Announce(guild)
+    if InLockdown and InLockdown() then return end
+    announced = GetTime()
+    local message = "v" .. OWN_VERSION
+    if guild and IsInGuild() then SendAddonMessage(PREFIX, message, "GUILD") end
+    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        SendAddonMessage(PREFIX, message, "INSTANCE_CHAT")
+    elseif IsInGroup() then
+        SendAddonMessage(PREFIX, message, IsInRaid() and "RAID" or "PARTY")
+    end
+end
+
+function ns.LoginNotes()
+    local db = ns.db
+    if not db.languagesTold then
+        db.languagesTold = true
+        ns.SayLanguages()
+    end
+    local newest, mine = VersionNumber(db.newest), VersionNumber(OWN_VERSION)
+    if newest and mine and newest > mine and time() - (db.newestAt or 0) < HEARD_FOR then
+        updateTold = true
+        ns.SayUpdate(db.newest)
+    else
+        db.newest, db.newestAt = nil, nil
+    end
+    Announce(true)
+end
+
 ns.events = CreateFrame("Frame")
 ns.events:RegisterEvent("ADDON_LOADED")
 -- The game's controller menu opens chat by a chat window's own SetGamepadFocus. An addon that replaced it (some
@@ -85,7 +150,21 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
         if arg1 then C_Timer.After(1, WarnWheelOff) end
         return
     end
+    if event == "CHAT_MSG_ADDON" then
+        if arg1 == PREFIX and type(arg2) == "string" and not (issecretvalue and issecretvalue(arg2)) then
+            Heard(arg2:match("^v(.+)$"))
+        end
+        return
+    end
+    if event == "GROUP_ROSTER_UPDATE" then
+        -- Someone new in the group hears this version too, ten seconds apart at the least.
+        local count = GetNumGroupMembers()
+        if count > grouped and GetTime() - announced > 10 then Announce() end
+        grouped = count
+        return
+    end
     if event == "PLAYER_LOGIN" then
+        C_Timer.After(8, ns.LoginNotes)
         -- A pad chord an earlier build bound to Open Chat is let go (the game's controller mode opens chat itself).
         local db = ns.db
         if db.chatChord and not InCombatLockdown() then
@@ -139,6 +218,9 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
     self:RegisterEvent("CHAT_MSG_WHISPER")
     self:RegisterEvent("GAME_PAD_ACTIVE_CHANGED")
     self:RegisterEvent("PLAYER_LOGIN")
+    self:RegisterEvent("CHAT_MSG_ADDON")
+    self:RegisterEvent("GROUP_ROSTER_UPDATE")
+    C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
     if ns.Ready then ns.Ready() end
 end)
 

@@ -187,3 +187,5 @@ L["OPT_WORDS_TIP"] = "Parole e abbreviazioni che i suggerimenti devono conoscere
 L["OPT_LANGUAGE"] = "Lingua di scrittura"
 L["OPT_LANGUAGE_TIP"] = "La lingua delle parole che la tastiera propone. Ogni lingua conserva le parole che ha imparato da te."
 L["LANG_MISSING"] = "Le parole per %s non sono installate o sono disattivate (%s), quindi la tastiera propone parole inglesi."
+L["NEWS_LANGUAGES"] = "ora propone anche parole in %s. Segue la lingua del tuo gioco; per scrivere in un'altra, cambia Lingua di scrittura nelle impostazioni di FlickChat, all'ultima pagina della ruota della tastiera."
+L["UPDATE_OUT"] = "è uscita la versione %s (hai la %s). Aggiorna dall'app CurseForge o su %s"

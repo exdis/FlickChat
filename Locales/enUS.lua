@@ -182,4 +182,7 @@ ns.EN = {
     OPT_LANGUAGE = "Typing language",
     OPT_LANGUAGE_TIP = "The language of the words the keyboard guesses. Each language keeps the words it learned from you.",
     LANG_MISSING = "%s words are not installed or are switched off (%s), so the keyboard guesses English words.",
+    NEWS_LANGUAGES = "now also guesses words in %s. It follows your game's language; to type in another, change Typing"
+        .. " language in FlickChat's settings, on the last page of the keyboard's wheel.",
+    UPDATE_OUT = "version %s is out (you have %s). Update in the CurseForge app, or at %s",
 }

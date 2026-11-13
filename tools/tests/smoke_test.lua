@@ -92,7 +92,11 @@ Settings = {
     RegisterAddOnCategory = function(category) Settings.registered = category end,
     OpenToCategory = function(id) openedCategory = id end,
 }
-C_AddOns = { GetAddOnMetadata = function() return "FlickChat" end,
+addonSent = {}
+C_ChatInfo = { RegisterAddonMessagePrefix = function() end, InChatMessagingLockdown = function() return false end,
+    SendAddonMessage = function(prefix, text, kind) addonSent[#addonSent + 1] = prefix .. " " .. text .. " " .. kind end }
+time = os.time
+C_AddOns = { GetAddOnMetadata = function(_, field) return field == "Version" and "1.2.0" or "FlickChat" end,
     -- a language folder (Packs/<name>): its files run, as the game loads it on demand
     LoadAddOn = function(name)
         local toc = io.open(dir .. "/Packs/" .. name .. "/" .. name .. ".toc")
@@ -609,6 +613,50 @@ Press("PAD1")
 Is("a French word on the vowels layout", sent[#sent], "Merci")
 Press("PAD2")
 ns.db.language, ns.db.layout = nil, "letters"
+
+-- login notes: the typing languages once; a newer version heard from another player, until this one is as new
+local notes = {}
+local function Heard(fn, ...)
+    print = function(text) notes[#notes + 1] = text end
+    fn(...)
+    print = printWas
+end
+local function Addon(prefix, text) ns.events.scripts.OnEvent(ns.events, "CHAT_MSG_ADDON", prefix, text) end
+ns.db.languagesTold, ns.db.newest, ns.db.newestAt = nil, nil, nil
+Heard(ns.LoginNotes)
+Is("the typing languages are told at login", #notes, 1)
+Has("each by its own name", notes[1], "Português, Français, Deutsch, Italiano")
+Heard(ns.LoginNotes)
+Is("once only", #notes, 1)
+Heard(Addon, "FlickChat", "v1.2.0")
+Heard(Addon, "FlickChat", "v1.1.9")
+Heard(Addon, "FlickChat", "junk")
+Heard(Addon, "Other", "v9.9.9")
+Is("a version no newer, a broken one and another addon's say nothing", #notes, 1)
+Heard(Addon, "FlickChat", "v1.2.1")
+Is("a newer version from another player is said", #notes, 2)
+Has("with both versions", notes[2], "1.2.1 is out (you have 1.2.0)")
+Has("and where to get it", notes[2], "curseforge.com/wow/addons/flickchat")
+Has("in red after the addon's blue name", notes[2], "|cff2e8fe6FlickChat|r |cffff4040version")
+Is("the languages note is not red", notes[1]:find("|cffff4040", 1, true), nil)
+Heard(Addon, "FlickChat", "v1.4.0")
+Is("once a session", #notes, 2)
+Is("the newest heard is kept", ns.db.newest, "1.4.0")
+Heard(ns.LoginNotes)
+Has("and said again at the next login", notes[3], "1.4.0 is out")
+ns.db.newestAt = time() - 40 * 86400
+Heard(ns.LoginNotes)
+Is("unheard for a month it is forgotten", ns.db.newest, nil)
+ns.db.newest, ns.db.newestAt = "1.2.0", time()
+Heard(ns.LoginNotes)
+Is("as is one this version has caught up with", ns.db.newest, nil)
+Is("neither is said", #notes, 3)
+local wasInGuild = IsInGuild
+IsInGuild = function() return true end
+addonSent = {}
+Heard(ns.LoginNotes)
+IsInGuild = wasInGuild
+Is("this version goes out to the guild at login", addonSent[1], "FlickChat v1.2.0 GUILD")
 
 -- every language's strings: none English lacks, and the same %s and %d in the same order as English's
 local function Blanks(text)
