@@ -1910,22 +1910,33 @@ local function StepAside(piece, owner)
 end
 
 local function GameChatButtons(edit)
-    local footer = edit.chatFrame and edit.chatFrame.footer
+    -- The chat's own pieces: only while it is chat that is typed in. In another window's box the tabs cannot be
+    -- flipped, and the game's marks on them stay the game's.
+    local chat = edit.chatFrame
+    local footer = chat and chat.footer
     StepAside(footer and footer.inputLegend, footer)
-    local dock = GENERAL_CHAT_DOCK
+    local dock = chat and GENERAL_CHAT_DOCK
     StepAside(dock and dock.LeftTabHint, dock and dock.footer)
     StepAside(dock and dock.RightTabHint, dock and dock.footer)
-    -- In their places: View with the bumper, the pair that flips the tabs while typing.
+    -- In their places: View with the bumper, the pair that flips the tabs while typing. On a frame at the chat's
+    -- own depth, so a window standing over the chat covers them as it covers the tabs.
     local hints = kb.tabHints
     if not hints then
-        hints = {}
+        hints = { holder = CreateFrame("Frame", nil, kb) }
+        -- At the screen's own scale, as the other hint pieces: the keyboard's size never sizes them.
+        hints.holder:SetIgnoreParentScale(true)
+        hints.holder:SetScale(UIParent:GetEffectiveScale())
         kb.tabHints = hints
         for i = 1, 4 do
-            hints[i] = { icon = kb.hints:CreateTexture(nil, "OVERLAY") }
+            hints[i] = { icon = hints.holder:CreateTexture(nil, "OVERLAY") }
             hints[i].icon:SetSize(TAB_HINT_ICON, TAB_HINT_ICON)
         end
     end
-    local game = dock ~= nil and InputUtil ~= nil and InputUtil.IsGamepadUIEnabled()
+    if dock and not dock:IsForbidden() then
+        hints.holder:SetFrameStrata(dock:GetFrameStrata())
+        hints.holder:SetFrameLevel(dock:GetFrameLevel() + 10)
+    end
+    local game = dock and InputUtil ~= nil and InputUtil.IsGamepadUIEnabled()
     for i, key in ipairs({ "PADBACK", "PADLSHOULDER", "PADBACK", "PADRSHOULDER" }) do
         local hint = game and (i <= 2 and dock.LeftTabHint or dock.RightTabHint)
         local icon = hints[i].icon
