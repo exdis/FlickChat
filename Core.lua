@@ -284,6 +284,8 @@ local function EditPhrase(button, slot)
         end)
         edit:SetScript("OnEscapePressed", edit.Hide)
         edit:SetScript("OnEditFocusLost", edit.Hide)
+        -- Our own box: its Enter saves and its Escape drops, as the keyboard's A and B press them.
+        edit.flickOwn = true
         ns.Watch(edit)
         options.phraseEdit = edit
     end

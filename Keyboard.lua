@@ -862,6 +862,13 @@ Send = function()
     if text:find("%S") then ns.Learn(text) end
     if S.lesson then FinishLesson() end
     Use("send")
+    -- Another window's box (mail, a search): the text stays in it and the box lets go, so the game's own cursor
+    -- is where it was and moves on from there. Its Enter is never pressed: that steps the typing to the next box
+    -- and leaves the cursor behind, and a many-line box has none.
+    if not box.chatFrame and not box.flickOwn then
+        box:ClearFocus()
+        return ns.Shut()
+    end
     local enter = box:GetScript("OnEnterPressed")
     if enter then enter(box) end
     if box then
@@ -886,6 +893,13 @@ local function Close()
     if S.naming then
         S.naming = nil
         return Paint()
+    end
+    -- Another window's box: B puts back what it held and lets go. Its Escape is never pressed (a dialog's shuts
+    -- the dialog, a many-line box has none).
+    if not box.chatFrame and not box.flickOwn and not ns.practice then
+        box:SetText(S.openedText or "")
+        box:ClearFocus()
+        return ns.Shut()
     end
     -- B leaves chat and keeps the message for the next time it opens; View is what empties a line.
     if ns.practice then
@@ -1669,8 +1683,14 @@ Paint = function()
             kb.hint:SetPoint("BOTTOMLEFT", kb, "TOPLEFT", 14, lift)
             kb.hint:SetPoint("BOTTOMRIGHT", kb, "TOPRIGHT", -14, lift)
         else
-            kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -4)
-            kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -4)
+            -- Under the button bar when that hangs on the keyboard (a box with no footer of the game's to stand
+            -- in for). The bar keeps the screen's scale, the hint the keyboard's: the bar's height in the hint's.
+            local drop = 4
+            if box and not box.chatFrame and not kb.barOver and kb.bar:IsShown() then
+                drop = kb.bar:GetHeight() * kb.bar:GetEffectiveScale() / kb:GetEffectiveScale() + 6
+            end
+            kb.hint:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 6, -drop)
+            kb.hint:SetPoint("TOPRIGHT", kb, "BOTTOMRIGHT", -6, -drop)
         end
     end
     kb.hintBack:SetPoint("BOTTOMRIGHT", kb.hint, "BOTTOMRIGHT", 8, -7 - row)
@@ -1995,6 +2015,10 @@ local function Build()
     kb.hintGoal:SetPoint("BOTTOM", kb.hint, "TOP", 0, 10)
     kb.bar = CreateFrame("Frame", nil, kb)
     kb.bar:SetClampedToScreen(true)
+    -- Over the game's own footer when the bar stands in its place: all of it out of sight, whatever its size.
+    kb.barCover = kb.bar:CreateTexture(nil, "BACKGROUND", nil, -8)
+    kb.barCover:SetColorTexture(0.03, 0.03, 0.04, 1)
+    kb.barCover:Hide()
     local slot = kb.bar:CreateTexture(nil, "BACKGROUND")
     slot:SetAllPoints()
     local edge = kb.bar:CreateTexture(nil, "BORDER")
@@ -2071,8 +2095,77 @@ local function Names()
 end
 
 -- Beside the chat box on the side with more room, bottoms level.
+-- Placing by a text box that is not chat, and finding such boxes (one table: the file is at Lua's 200 locals).
+local Fit = { UNDER = 90, CLEAR = 12 }
+
+-- The window a text box belongs to: its last parent before the screen.
+function Fit.WindowOf(edit)
+    local frame = edit
+    while true do
+        local parent = frame:GetParent()
+        if not parent or parent == UIParent or parent:IsForbidden() then return frame end
+        frame = parent
+    end
+end
+
+-- The game's own button footer for the window a text box is in (A Select, B Back under the mail window), when it
+-- is up: the first frame up from the box that keeps one. Only read, never changed.
+function Fit.Footer(edit)
+    local frame = edit.flickFor or edit
+    for _ = 1, 8 do
+        frame = frame:GetParent()
+        if not frame or frame == UIParent or frame:IsForbidden() then return nil end
+        local footer = frame.gamepadFooter or frame.footer
+        local legend = type(footer) == "table" and footer.inputLegend
+        if legend and legend.IsShown and not legend:IsForbidden() and legend:IsShown() then return legend end
+    end
+end
+
+-- Whether two frames lie on each other, in screen pixels; unplaced counts as no.
+function Fit.Overlap(a, b)
+    local sa, sb = a:GetEffectiveScale(), b:GetEffectiveScale()
+    local al, ar, at, ab = a:GetLeft(), a:GetRight(), a:GetTop(), a:GetBottom()
+    local bl, br, bt, bb = b:GetLeft(), b:GetRight(), b:GetTop(), b:GetBottom()
+    if not (al and ar and at and ab and bl and br and bt and bb) then return false end
+    return al * sa < br * sb and ar * sa > bl * sb and ab * sa < bt * sb and at * sa > bb * sb
+end
+
+-- Fit.UNDER: under the keyboard, the button bar and two lines of hint, kept clear as well.
+
+-- A text box that is not chat (mail, a search box): the keyboard stands beside that box's window, never on it. To
+-- its right if the screen has the room, else its left, else over or under it. In the screen's own units.
+function Fit.ByWindow(edit)
+    local window = Fit.WindowOf(edit)
+    local UNDER, CLEAR = Fit.UNDER, Fit.CLEAR
+    local unit = UIParent:GetEffectiveScale()
+    local scale = window:GetEffectiveScale() / unit
+    local left, right, top, bottom = window:GetLeft(), window:GetRight(), window:GetTop(), window:GetBottom()
+    if not (left and right and top and bottom) then return false end
+    left, right, top, bottom = left * scale, right * scale, top * scale, bottom * scale
+    local own = kb:GetScale()
+    local wide, tall = kb:GetWidth() * own, kb:GetHeight() * own
+    local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
+    -- The guide over the keyboard (not in the game's corner) needs its height above.
+    local above = kb.guideCorner and 0 or kb.guide:GetHeight() * own + 8
+    local x, y
+    if screenW - right >= wide + CLEAR then
+        x, y = right + CLEAR, top
+    elseif left >= wide + CLEAR then
+        x, y = left - CLEAR - wide, top
+    elseif screenH - top >= tall + UNDER + above + CLEAR then
+        x, y = left, top + CLEAR + UNDER + tall
+    else
+        x, y = left, bottom - CLEAR - above
+    end
+    x = math.max(0, math.min(screenW - wide, x))
+    y = math.max(tall + UNDER, math.min(screenH - above, y))
+    kb:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / own, y / own)
+    return true
+end
+
 PlaceBy = function(edit)
     kb:ClearAllPoints()
+    if not edit.chatFrame and Fit.ByWindow(edit) then return end
     local x = edit:GetCenter()
     local left = x and x * edit:GetEffectiveScale() < UIParent:GetWidth() * UIParent:GetEffectiveScale() / 2
     -- Beside the chat line, plus how far the player carried it (kept in screen units, whatever its size).
@@ -2154,11 +2247,31 @@ local function Open(edit)
     local back = draft and edit.chatFrame and text == "" and not S.lesson and not ns.dev and not ns.practiceNext
     if back then text, draft = draft, nil end
     Reset(text)
+    S.openedText = text
+    -- A numbers-only box (a price, an amount) opens on the digits.
+    if not edit.chatFrame and edit.IsNumeric and edit:IsNumeric() then S.symbols = true end
     S.draftBack = back or nil
     ns.Restyle()
-    PlaceBy(edit)
     kb.bar:ClearAllPoints()
-    kb.bar:SetPoint("TOPLEFT", edit, "BOTTOMLEFT", 0, -2)
+    kb.barCover:Hide()
+    kb.barOver = nil
+    if edit.chatFrame then
+        kb.bar:SetPoint("TOPLEFT", edit, "BOTTOMLEFT", 0, -2)
+    else
+        -- In the place of the window's own button footer, as under chat: those buttons are the keyboard's while
+        -- it is up. The game's footer is not touched; a dark backing of ours lies over all of it. A window with
+        -- no footer: under the keyboard (under the box the bar would lie on the box's own window).
+        local legend = Fit.Footer(edit)
+        if legend then
+            kb.barOver = legend
+            kb.bar:SetPoint("LEFT", legend, "LEFT", 0, 0)
+            kb.barCover:ClearAllPoints()
+            kb.barCover:SetAllPoints(legend)
+            kb.barCover:Show()
+        else
+            kb.bar:SetPoint("TOPLEFT", kb, "BOTTOMLEFT", 0, -2)
+        end
+    end
     -- As the game's own chat buttons: held on screen, and where that pushes it up into the chat, behind the chat.
     local chat = edit.chatFrame or edit:GetParent()
     if not edit.chatFrame then
@@ -2172,6 +2285,15 @@ local function Open(edit)
     kb:Show()
     GameChatButtons(edit)
     PlaceGuide()
+    -- The guide in the game's corner would lie on a window standing there: over the keyboard then.
+    if not edit.chatFrame and kb.guideCorner and Fit.Overlap(kb.guide, Fit.WindowOf(edit)) then
+        kb.guideCorner = false
+        kb.guide:ClearAllPoints()
+        kb.guide:SetPoint("BOTTOMLEFT", kb, "TOPLEFT", 0, 4)
+    end
+    -- Once the guide has its place: the keyboard's own depends on it.
+    PlaceBy(edit)
+    kb.hintLift = nil
     Guess()
     Show()
     if ns.moveNext and edit.chatFrame and not S.lesson then
@@ -2266,7 +2388,49 @@ function ns.PadActive(active)
     if focus and edits[focus] then Open(focus) end
 end
 
+-- Any other text box the controller is put in (mail, the auction house's search, a name asked in a dialog): the
+-- keyboard comes up for it as for chat. Such a box takes the typing focus by the game's own controller cursor, with
+-- no word to an addon, so the focus is looked at ten times a second, only while that cursor is up. Nothing is
+-- hooked on such a box: a script of ours on a box inside a window the game's cursor walks would run in the
+-- middle of that walk, and the game then refuses the cursor's next step as an addon's. Fit.loose: the box the
+-- keyboard is up for this way.
+function Fit.Seek()
+    local focus = GetCurrentKeyBoardFocus()
+    if Fit.loose then
+        -- It let go, or its window went.
+        if box == Fit.loose and focus == box then return end
+        local was = Fit.loose
+        Fit.loose = nil
+        if box == was then return ns.Shut() end
+    end
+    if not ns.db.enabled or not IsUsingGamepad() then return end
+    if not focus or edits[focus] or focus == box or focus:IsForbidden() or not focus:IsObjectType("EditBox") then return end
+    Fit.loose = focus
+    Open(focus)
+end
+
+function Fit.SeekBoxes(on)
+    if Fit.seeker then
+        Fit.seeker:Cancel()
+        Fit.seeker = nil
+    end
+    if on then
+        Fit.seeker = C_Timer.NewTicker(0.1, Fit.Seek)
+    elseif Fit.loose then
+        -- The cursor went (the window shut): the keyboard goes with it.
+        local was = Fit.loose
+        Fit.loose = nil
+        if box == was then ns.Shut() end
+    end
+end
+
 function ns.Ready()
+    local cursor = SmartNavigation
+    if cursor and cursor.HookScript then
+        cursor:HookScript("OnShow", function() Fit.SeekBoxes(true) end)
+        cursor:HookScript("OnHide", function() Fit.SeekBoxes(false) end)
+        if cursor:IsShown() then Fit.SeekBoxes(true) end
+    end
     for i = 1, NUM_CHAT_WINDOWS or 10 do
         local edit = _G["ChatFrame" .. i .. "EditBox"]
         if edit then Watch(edit) end

@@ -177,6 +177,8 @@ function box.SetChannelTarget(self, v) self.attr.channelTarget = v end
 function box.GetChannelTarget(self) return self.attr.channelTarget or 0 end
 function box.UpdateHeader(self) self.header = self.attr.chatType .. ":" .. tostring(self.attr.tellTarget or self.attr.channelTarget or "") end
 ChatFrame1EditBox = box
+-- the game's controller cursor, there before the addon loads
+SmartNavigation = Obj(UIParent)
 
 local ns = {}
 -- every file the toc lists, in its order
@@ -405,6 +407,44 @@ timers[#timers]()
 print = realPrint
 Is("the switched-off menu Chat is said once", #said, 1)
 Has("naming the addon the game blames", said[1], "SomeChatAddon")
+
+-- a text box that is not chat (mail's To line): focused by the game's cursor, the keyboard comes up for it
+Hidden()
+generic.Hide(kb)
+local mail = Obj(UIParent)
+mail.shown = true
+function mail.IsObjectType(_, kind) return kind == "EditBox" end
+function mail.IsForbidden() return false end
+SmartNavigation.hooks.OnShow(SmartNavigation)
+local seek = lastTick
+focus = mail
+seek()
+Is("the keyboard opens for another text box", kb.shown, true)
+function mail.ClearFocus() focus = nil end
+Is("nothing is hooked on such a box", mail.hooks, nil)
+mail.scripts.OnEnterPressed = function(self) self.entered = true end
+mail.scripts.OnEscapePressed = function(self) self.escaped = true end
+Type("hi")
+Press("PAD1")
+Is("A keeps the text in the box", mail.text, "Hi")
+Is("lets the box go, so the game's cursor is where it was", kb.shown, false)
+Is("and never presses the box's Enter", mail.entered, nil)
+-- back in, more typed, then B: what it held comes back
+seek()
+focus = mail
+seek()
+Type("no")
+Press("PAD2")
+Is("B puts back what the box held", mail.text, "Hi")
+Is("and lets go without the box's Escape", kb.shown == false and mail.escaped == nil, true)
+-- the game's cursor leaving the box (its focus gone by the game's hand) shuts the keyboard on the next look
+seek()
+focus = mail
+seek()
+Is("up again on the next Select", kb.shown, true)
+focus = nil
+seek()
+Is("and gone when the game takes the focus away", kb.shown, false)
 
 print(failed == 0 and "all checks passed" or (failed .. " check(s) failed"))
 os.exit(failed == 0 and 0 or 1)

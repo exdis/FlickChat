@@ -22,7 +22,7 @@ read_globals = {
     "UnitIsPlayer", "SaveBindings", "PlaySound", "NineSliceUtil", "NineSliceLayouts", "IsInGroup", "hooksecurefunc",
     "GetNumGroupMembers", "GetGuildRosterInfo", "GetCurrentBindingSet", "CreateSettingsListSectionHeaderInitializer",
     "CreateSettingsButtonInitializer", "ChatFrame1", "ChatFrame1EditBox", "C_GamePad", "BNGetNumFriends",
-    "C_BattleNet", "SetOverrideBindingClick", "ClearOverrideBindings", "NUM_CHAT_WINDOWS", "FloatingChatFrameMixin", "issecurevariable",
+    "C_BattleNet", "SetOverrideBindingClick", "ClearOverrideBindings", "NUM_CHAT_WINDOWS", "FloatingChatFrameMixin", "SmartNavigation", "issecurevariable",
     "MinimalSliderWithSteppersMixin", "LOCALIZED_CLASS_NAMES_MALE", "LE_PARTY_CATEGORY_INSTANCE", "GetZoneText",
     "GetSubZoneText", "GetChannelList", "GENERAL_CHAT_DOCK", "GamepadPersistentInputLegend", "FCFDock_SelectWindow",
     "Enum", "debugstack", "IsUsingGamepad", "OKAY", "GetNumFriends", "date",
