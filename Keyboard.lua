@@ -64,7 +64,6 @@ local HUB_BG_ART, HUB_ART, DOT_ART = "gamepad-radialgamemenu-ring-bg", "gamepad-
     "gamepad-radialgamemenu-cursorbg-neutral"
 -- The box art's bevel, kept unstretched; the lit art's glow reaches this far past the box.
 local BOX_EDGE, LIT_GLOW = 12, 7
-local WHITE = "Interface\\Buttons\\WHITE8X8"
 local DISC = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local YELLOW, BLUE, IDLE = { 0.94, 0.89, 0.26 }, { 0.34, 0.71, 0.91 }, { 0.82, 0.82, 0.82 }
 local LETTER_COLOR = { 1, 1, 1 }
@@ -276,7 +275,8 @@ local function OpenPhrases()
     Paint()
 end
 
-local Send
+-- draft: an unsent chat message closed with B, back in the box the next time chat opens empty.
+local Send, draft
 
 -- Save mode (A held, then X): the message replaces the flicked slot's phrase and the box empties.
 local function SavePhrase(digit)
@@ -881,9 +881,6 @@ local function ClearAll()
     Guess()
     Show()
 end
-
--- An unsent chat message closed with B: back in the box the next time chat opens empty.
-local draft
 
 local function Close()
     if S.naming then
@@ -1520,12 +1517,12 @@ local function PlacePrompts()
             local width = label:GetStringWidth()
             -- X's label flips between two words: room for the longer, so what follows it never shifts.
             if key == "PAD3" and not S.phrases and not S.move then
-                local now = label:GetText()
+                local shown = label:GetText()
                 label:SetText(L["SYMBOLS"])
                 width = math.max(width, label:GetStringWidth())
                 label:SetText(L["LETTERS"])
                 width = math.max(width, label:GetStringWidth())
-                label:SetText(now)
+                label:SetText(shown)
             end
             x = x + BAR_ICON + LABEL_GAP + width + BAR_GAP
         end
@@ -1568,14 +1565,14 @@ local function PaintPrompts()
     caps.label:SetShown(tips)
     caps.icon:SetShown(tips and caps.plain == nil)
     local moved = kb.promptsMoved
-    for key, text in pairs(Labels()) do
+    for key, name in pairs(Labels()) do
         local prompt = kb.prompts[key]
         SetIcon(prompt, key)
-        if prompt.plain then text = prompt.plain .. " " .. text end
-        if prompt.text ~= text then
-            moved = moved or not prompt.width or (prompt.text == "") ~= (text == "")
-            prompt.label:SetText(text)
-            prompt.text = text
+        if prompt.plain then name = prompt.plain .. " " .. name end
+        if prompt.text ~= name then
+            moved = moved or not prompt.width or (prompt.text == "") ~= (name == "")
+            prompt.label:SetText(name)
+            prompt.text = name
         end
     end
     if moved then PlacePrompts() end
@@ -1704,15 +1701,6 @@ end
 
 -- Built once; sizes in 1080-line pixels, the frame's scale doing the rest.
 
-local function Disc(parent, layer, size, color, alpha)
-    local t = parent:CreateTexture(nil, layer)
-    t:SetTexture(DISC)
-    t:SetSize(size, size)
-    t:SetVertexColor(color[1], color[2], color[3], alpha)
-    t:SetPoint("CENTER")
-    return t
-end
-
 -- A box piece in the game's art, its bevel kept as the box stretches; a flat color where the client lacks the art.
 local function BoxArt(texture, atlas, color)
     if C_Texture.GetAtlasInfo(atlas) then
@@ -1839,8 +1827,8 @@ function ns.Restyle()
         piece:SetScale(UIParent:GetEffectiveScale())
     end
     for key, prompt in pairs(kb.prompts) do
-        local size = ON_BAR[key] and BAR_ICON or GUIDE_ICON
-        prompt.icon:SetSize(size, size)
+        local icon = ON_BAR[key] and BAR_ICON or GUIDE_ICON
+        prompt.icon:SetSize(icon, icon)
         prompt.label:SetFontObject(GameFontNormal)
         prompt.text = nil
     end
@@ -2034,12 +2022,10 @@ local function Build()
     end)
     -- The controller is the keyboard's while it shows: no walking, jumping or casting under the typing.
     kb:SetScript("OnShow", function(self)
-        if chatProbe then ChatNote("keyboard shown by " .. Caller()) end
         self:EnableGamePadButton(not self.viewHold and not S.preview)
         self:EnableGamePadStick(not S.preview)
     end)
     kb:SetScript("OnHide", function(self)
-        if chatProbe then ChatNote("keyboard hidden by " .. Caller()) end
         self:EnableGamePadButton(false)
         self:EnableGamePadStick(false)
         StopHold()
