@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.0] - 2026-11-14
+
+### Added
+- Spanish typing: the keyboard now guesses words in Spanish, with ñ and accents from plain flicks. Spanish and Latin American Spanish games use it by default, and Typing language in the settings picks it anywhere else. Words FlickChat learned from you on a Spanish game stay with Spanish.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added
