@@ -543,7 +543,7 @@ local function Version(path)
         if version then return version end
     end
 end
-local ACCENTED = { enUS = "hello", ptBR = "não", frFR = "où", deDE = "für", itIT = "più" }
+local ACCENTED = { enUS = "hello", ptBR = "não", frFR = "où", deDE = "für", itIT = "più", esES = "también" }
 for _, code in ipairs(ns.LANGUAGES) do
     ns.db.language, ns.db.wordsOf, ns.db.others = code, code, {}
     ns.db.learned, ns.db.pairs, ns.db.forms, ns.db.forgot = {}, {}, {}, {}
@@ -613,6 +613,24 @@ Press("PAD1")
 Is("a French word on the vowels layout", sent[#sent], "Merci")
 Press("PAD2")
 ns.db.language, ns.db.layout = nil, "letters"
+-- a Latin American Spanish game types with Spanish's words, and Spanish there is the game's own, no pick
+ns.locale = "esMX"
+Is("a Latin American Spanish game types Spanish", ns.WantedLanguage(), "esES")
+ns.db.language = "itIT"
+ns.NextLanguage()
+Is("where Spanish is followed, not picked", ns.db.language, nil)
+-- saved settings from before Spanish had a list, on a Spanish game: what was learned is Spanish's
+local old = { dbVersion = 1, languagesTold = true, wordsOf = "enUS" }
+ns.Migrate(old)
+Is("words learned on a Spanish game before its list are Spanish's", old.wordsOf, "esES")
+Is("the five languages told before count as told", old.languagesTold, 5)
+local picked = { dbVersion = 1, language = "enUS", wordsOf = "enUS" }
+ns.Migrate(picked)
+Is("a picked English keeps its words", picked.wordsOf, "enUS")
+ns.locale = "enUS"
+local english = { dbVersion = 1, wordsOf = "enUS" }
+ns.Migrate(english)
+Is("as does an English game", english.wordsOf, "enUS")
 
 -- login notes: the typing languages once; a newer version heard from another player, until this one is as new
 local notes = {}
@@ -657,6 +675,13 @@ addonSent = {}
 Heard(ns.LoginNotes)
 IsInGuild = wasInGuild
 Is("this version goes out to the guild at login", addonSent[1], "FlickChat v1.2.0 GUILD")
+-- a language added after the note was told: told once more, by itself
+local toldBefore = #notes
+ns.db.languagesTold = 5
+Heard(ns.LoginNotes)
+Heard(ns.LoginNotes)
+Is("a language added since is told once", #notes, toldBefore + 1)
+Has("by itself", notes[#notes], "words in Español.")
 
 -- every language's strings: none English lacks, and the same %s and %d in the same order as English's
 local function Blanks(text)

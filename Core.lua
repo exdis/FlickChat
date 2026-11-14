@@ -32,8 +32,13 @@ end
 
 -- Typing languages. English's words are the addon's own; each other language's are a load-on-demand folder
 -- beside it (FlickChat_ptBR), which hands them over with FlickChat_AddWords as it loads.
-ns.LANGUAGES = { "enUS", "ptBR", "frFR", "deDE", "itIT" }
-ns.LANGUAGE_NAMES = { enUS = "English", ptBR = "Português", frFR = "Français", deDE = "Deutsch", itIT = "Italiano" }
+-- New ones go last: the login note names those past the ones it has told.
+ns.LANGUAGES = { "enUS", "ptBR", "frFR", "deDE", "itIT", "esES" }
+ns.LANGUAGE_NAMES = { enUS = "English", ptBR = "Português", frFR = "Français", deDE = "Deutsch", itIT = "Italiano",
+    esES = "Español" }
+-- A game language typed with another's words: Latin American Spanish with Spanish's.
+local SAME_WORDS = { esMX = "esES" }
+local function GameLanguage() return SAME_WORDS[ns.locale] or ns.locale end
 ns.wordLists = {}
 function FlickChat_AddWords(code, data) ns.wordLists[code] = data end
 local LoadAddOn = C_AddOns.LoadAddOn
@@ -45,14 +50,20 @@ local LoadAddOn = C_AddOns.LoadAddOn
 -- are; others: the other languages' learned words, by language.
 local DEFAULTS = { enabled = true, learned = {}, pairs = {}, forms = {}, forgot = {}, uses = {}, layout = "letters", size = 100,
     arm = 0.55, rearm = 0.3, lessonDone = false, phrases = {}, wheelSize = 100, wordRoom = 100, others = {} }
-local DB_VERSION = 1
+local DB_VERSION = 2
 local LEARN_CAP, PAIR_CAP = 2000, 4000
 local WHISPERS_KEPT = 10
 
 ns.whispers = {}
 
 -- 0 (the ring keyboard) carries over as is: its learned counts keep their meaning.
-local function Migrate(db)
+function ns.Migrate(db)
+    if (db.dbVersion or 0) < 2 then
+        -- languagesTold was a plain yes for the first five; now how many of LANGUAGES the login note has named
+        if db.languagesTold == true then db.languagesTold = 5 end
+        -- a Spanish game typed with English's list before Spanish had one: what it learned there is Spanish
+        if GameLanguage() == "esES" and not db.language and db.wordsOf == "enUS" then db.wordsOf = "esES" end
+    end
     db.dbVersion = DB_VERSION
 end
 
@@ -68,9 +79,10 @@ local function VersionNumber(version)
     return major and major * 1e6 + minor * 1e3 + patch
 end
 
-function ns.SayLanguages()
+-- told: how many of LANGUAGES an earlier note named (none: all but English).
+function ns.SayLanguages(told)
     local names = {}
-    for i = 2, #ns.LANGUAGES do names[#names + 1] = ns.LANGUAGE_NAMES[ns.LANGUAGES[i]] end
+    for i = (told or 1) + 1, #ns.LANGUAGES do names[#names + 1] = ns.LANGUAGE_NAMES[ns.LANGUAGES[i]] end
     ns.Say(ns.L["NEWS_LANGUAGES"]:format(table.concat(names, ", ")))
 end
 
@@ -107,9 +119,10 @@ end
 
 function ns.LoginNotes()
     local db = ns.db
-    if not db.languagesTold then
-        db.languagesTold = true
-        ns.SayLanguages()
+    local told = db.languagesTold or 1
+    if told < #ns.LANGUAGES then
+        db.languagesTold = #ns.LANGUAGES
+        ns.SayLanguages(told)
     end
     local newest, mine = VersionNumber(db.newest), VersionNumber(OWN_VERSION)
     if newest and mine and newest > mine and time() - (db.newestAt or 0) < HEARD_FOR then
@@ -207,7 +220,7 @@ ns.events:SetScript("OnEvent", function(self, event, arg1, arg2)
     self:UnregisterEvent("ADDON_LOADED")
     FlickChatDB = FlickChatDB or {}
     local db = FlickChatDB
-    Migrate(db)
+    ns.Migrate(db)
     for key, value in pairs(DEFAULTS) do
         if db[key] == nil then db[key] = type(value) == "table" and {} or value end
     end
@@ -226,7 +239,7 @@ end)
 
 -- The language the player types in: their pick, else the game's own where there is a list for it.
 function ns.WantedLanguage()
-    local code = ns.db.language or ns.locale
+    local code = ns.db.language or GameLanguage()
     return ns.LANGUAGE_NAMES[code] and code or "enUS"
 end
 
@@ -279,7 +292,7 @@ function ns.NextLanguage()
         local code = ns.LANGUAGES[(at + step - 1) % #ns.LANGUAGES + 1]
         if Loaded(code) then
             -- the game's own language is no pick: it is followed
-            if code == ns.locale then ns.db.language = nil else ns.db.language = code end
+            if code == GameLanguage() then ns.db.language = nil else ns.db.language = code end
             break
         end
     end

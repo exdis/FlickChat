@@ -97,6 +97,19 @@ LANGS = {
             scambio aiuto orda alleanza guerriero mago ladro cacciatore stregone druido paladino sciamano
             sacerdote orco troll tauren umano nano gnomo elfo curatore cura danno pronto pronti""",
         }),
+    "esES": dict(
+        tatoeba="spa", name="Spanish", filter="es", accents="áéíñóúü", elide=False, nouns=False,
+        everyday="""asesinato asno caca concha drogas heroína idiota imbécil infierno maldito martillo orina pedo
+        pis sádico trio maciza""",
+        chat={
+            150: "hola buenas wenas vale gracias grax jaja jajaja xq porq tb tmb porfa plis oki chao",
+            600: """xd xfa pq sip nah tqm bn aki msj finde weno tío wey che compa bro grupo mazmorra mazmorras
+            banda gremio hermandad misión misiones nivel maná oro plata cobre vendedor montura bolsa banco
+            correo subasta subastas objeto objetos equipo jefe farmear levear lootear invita invitación alguien
+            necesito busco vendo compro cambio ayuda horda alianza guerrero mago pícaro cazador brujo druida
+            paladín chamán sacerdote orco trol tauren humano enano gnomo elfo sanador cura tanque daño listo
+            listos espera esperen esperad susurro susurra""",
+        }),
 }
 LANG = LANGS[CODE]
 # A French word with an apostrophe that is no elision: never taken apart.

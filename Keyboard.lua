@@ -41,6 +41,7 @@ LESSON.lines = {
     frFR = "on cherche un healer quel donjon demain ? merci : )",
     deDE = "wir brauchen einen heiler welcher dungeon heute ? danke : )",
     itIT = "ci serve un healer quale dungeon stasera ? grazie : )",
+    esES = "se busca un healer hacemos una mazmorra ? gracias : )",
 }
 function LESSON.Use(code)
     local i = 0
