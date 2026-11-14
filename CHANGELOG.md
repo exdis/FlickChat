@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Russian typing with a load-on-demand dictionary of about 94,000 words, WoW/chat vocabulary, all 33 Cyrillic letters, and both alphabetic and vowel-first layouts. Russian clients select it automatically; other clients can select Русский under Typing language.
+- Fully translated Russian interface, quick phrases, typing lesson and practice.
+- Language packs can supply their own alphabets without changing the existing Latin layouts.
+
+### Fixed
+- Cyrillic capitalization, exact-letter input, fallback letters, lesson prompts and practice character counts now handle whole UTF-8 characters.
+- Keyboard previews use the selected language's letters and predictions.
+
 ## [1.4.0] - 2026-11-14
 
 ### Added
